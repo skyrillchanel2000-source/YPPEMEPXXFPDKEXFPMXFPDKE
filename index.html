@@ -377,6 +377,12 @@
             font-weight: 600;
             margin-top: 10px;
         }
+
+        .filter-divider {
+            height: 1px;
+            background-color: #e0e0e0;
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
@@ -437,6 +443,12 @@
         let lensEnabled = true;
 
         const filterFields = [
+            { key: 'project', label: 'Проект' },
+            { key: 'title', label: 'Титул' },
+            { key: 'bz', label: 'БЗ' },
+            { key: 'size', label: 'Типоразмер' },
+            { key: 'taga', label: 'Тег основной' },
+            { key: 'tagb', label: 'Тег резервный' },
             { key: 'vccType', label: 'Тип ВЦК' },
             { key: 'totalLength', label: 'Общая длина' },
             { key: 'heaterType', label: 'Тип нагревателя' },
@@ -468,7 +480,6 @@
 
         function parseDate(dateStr) {
             if (!dateStr) return null;
-            // Try to parse various date formats
             const date = new Date(dateStr);
             return isNaN(date.getTime()) ? null : date;
         }
@@ -566,14 +577,7 @@
                     };
                 }).filter(item => item.project || item.title || item.bz || item.taga || item.tagb);
 
-                // Sort by date (newest first)
-                allData.sort((a, b) => {
-                    if (!a.parsedDate && !b.parsedDate) return 0;
-                    if (!a.parsedDate) return 1;
-                    if (!b.parsedDate) return -1;
-                    return b.parsedDate - a.parsedDate;
-                });
-
+                sortData(allData, 'newest');
                 filteredData = allData;
                 buildFilterPanel();
                 renderCards(filteredData);
@@ -628,13 +632,36 @@
             return result;
         }
 
+        function sortData(data, sortOrder) {
+            if (sortOrder === 'oldest') {
+                data.sort((a, b) => {
+                    if (!a.parsedDate && !b.parsedDate) return 0;
+                    if (!a.parsedDate) return -1;
+                    if (!b.parsedDate) return 1;
+                    return a.parsedDate - b.parsedDate;
+                });
+            } else {
+                data.sort((a, b) => {
+                    if (!a.parsedDate && !b.parsedDate) return 0;
+                    if (!a.parsedDate) return 1;
+                    if (!b.parsedDate) return -1;
+                    return b.parsedDate - a.parsedDate;
+                });
+            }
+        }
+
         function buildFilterPanel() {
             const container = document.getElementById('filters-container');
             container.innerHTML = '';
 
-            filterFields.forEach(field => {
-                const uniqueValues = [...new Set(allData.map(item => item[field.key]).filter(val => val))].sort();
-                
+            filterFields.forEach((field, index) => {
+                // Add divider after basic fields
+                if (field.key === 'tagb') {
+                    const divider = document.createElement('div');
+                    divider.className = 'filter-divider';
+                    container.appendChild(divider);
+                }
+
                 const group = document.createElement('div');
                 group.className = 'filter-group';
                 
@@ -643,14 +670,27 @@
                 
                 const select = document.createElement('select');
                 select.id = `filter-${field.key}`;
-                select.innerHTML = '<option value="">Все</option>';
                 
-                uniqueValues.forEach(val => {
-                    const option = document.createElement('option');
-                    option.value = val;
-                    option.textContent = val;
-                    select.appendChild(option);
-                });
+                if (field.key === 'date') {
+                    select.innerHTML = '<option value="">По умолчанию (новые сверху)</option>';
+                    const newestOpt = document.createElement('option');
+                    newestOpt.value = 'newest';
+                    newestOpt.textContent = 'Сначала новые';
+                    const oldestOpt = document.createElement('option');
+                    oldestOpt.value = 'oldest';
+                    oldestOpt.textContent = 'Сначала старые';
+                    select.appendChild(newestOpt);
+                    select.appendChild(oldestOpt);
+                } else {
+                    const uniqueValues = [...new Set(allData.map(item => item[field.key]).filter(val => val))].sort();
+                    select.innerHTML = '<option value="">Все</option>';
+                    uniqueValues.forEach(val => {
+                        const option = document.createElement('option');
+                        option.value = val;
+                        option.textContent = val;
+                        select.appendChild(option);
+                    });
+                }
                 
                 select.addEventListener('change', applyFilters);
                 
@@ -662,18 +702,22 @@
 
         function applyFilters() {
             activeFilters = {};
+            let sortOrder = 'newest';
             
             filterFields.forEach(field => {
                 const select = document.getElementById(`filter-${field.key}`);
-                if (select.value) {
-                    activeFilters[field.key] = select.value;
+                if (select && select.value) {
+                    if (field.key === 'date') {
+                        sortOrder = select.value;
+                    } else {
+                        activeFilters[field.key] = select.value;
+                    }
                 }
             });
             
             filteredData = allData.filter(item => {
                 const searchInput = document.getElementById('search-input').value.toLowerCase();
                 
-                // Check text search
                 const matchesSearch = !searchInput || 
                     (item.project && item.project.toLowerCase().includes(searchInput)) ||
                     (item.title && item.title.toLowerCase().includes(searchInput)) ||
@@ -684,7 +728,6 @@
                 
                 if (!matchesSearch) return false;
                 
-                // Check advanced filters
                 for (const key in activeFilters) {
                     if (item[key] !== activeFilters[key]) {
                         return false;
@@ -694,6 +737,7 @@
                 return true;
             });
             
+            sortData(filteredData, sortOrder);
             renderCards(filteredData);
         }
 
@@ -704,10 +748,8 @@
                     select.value = '';
                 }
             });
-            activeFilters = {};
-            filteredData = allData;
             document.getElementById('search-input').value = '';
-            renderCards(filteredData);
+            applyFilters();
         }
 
         function toggleAdvancedSearch() {
