@@ -49,7 +49,7 @@
             transition: transform 0.2s, box-shadow 0.2s;
             display: flex;
             flex-direction: column;
-            height: 100%; /* Чтобы карточки были одной высоты */
+            height: 100%;
         }
 
         .card:hover {
@@ -63,6 +63,12 @@
             background-size: cover;
             background-position: center;
             flex-shrink: 0;
+            cursor: pointer; /* Показывает, что можно кликнуть */
+            transition: opacity 0.2s;
+        }
+
+        .card-image:hover {
+            opacity: 0.9;
         }
 
         .card-content {
@@ -79,7 +85,7 @@
             color: #333;
             border-bottom: 2px solid #4285f4;
             padding-bottom: 10px;
-            min-height: 44px; /* Выравнивание заголовков */
+            min-height: 44px;
         }
 
         .card-row {
@@ -99,6 +105,53 @@
             text-align: right;
             max-width: 60%;
             word-wrap: break-word;
+        }
+        
+        /* Стили для модального окна (увеличенная картинка) */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 1000; 
+            padding-top: 60px; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgba(0,0,0,0.9); 
+        }
+
+        .modal-content {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90vh;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            animation: zoom 0.3s;
+        }
+
+        @keyframes zoom {
+            from {transform:scale(0)} 
+            to {transform:scale(1)}
+        }
+
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            transition: 0.3s;
+            cursor: pointer;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: #bbb;
+            text-decoration: none;
+            cursor: pointer;
         }
         
         .error-msg {
@@ -129,9 +182,15 @@
         <div class="no-data">Загрузка данных...</div>
     </div>
 
+    <!-- Модальное окно для картинки -->
+    <div id="imageModal" class="modal">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <img class="modal-content" id="img01">
+    </div>
+
     <script>
-        // ВСТАВЬТЕ СЮДА ССЫЛКУ, ПОЛУЧЕННУЮ ПРИ ОПУБЛИКОВАННОМ ЛИСТЕ "Классификация приточек"
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?gid=976824630&single=true&output=csv';
+        // ВСТАВЬТЕ СЮДА ССЫЛКУ НА CSV (с опубликованным листом "Классификация приточек")
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?output=csv';
 
         let allData = [];
 
@@ -154,6 +213,7 @@
                 const idxProject = headers.indexOf('Проект');
                 const idxTitle = headers.indexOf('Титул');
                 const idxBZ = headers.indexOf('БЗ');
+                const idxSize = headers.indexOf('Типоразмер'); // Новая колонка
                 const idxImg = headers.indexOf('IMG');
 
                 allData = dataRows.map(row => {
@@ -163,6 +223,7 @@
                         project: getVal(idxProject),
                         title: getVal(idxTitle),
                         bz: getVal(idxBZ),
+                        size: getVal(idxSize),
                         image: (idxImg !== -1 && row[idxImg] && row[idxImg].startsWith('http')) 
                                ? row[idxImg] 
                                : null
@@ -177,8 +238,6 @@
                     <div class="error-msg">
                         <h3>Не удалось загрузить данные</h3>
                         <p>${error.message}</p>
-                        <p>1. Убедитесь, что лист "Классификация приточек" активен при публикации.<br>
-                        2. Проверьте доступ: Файл -> Поделиться -> Все в интернете с ссылкой.</p>
                     </div>
                 `;
             }
@@ -238,10 +297,10 @@
 
                 let imageHtml = '';
                 if (item.image) {
-                    imageHtml = `<div class="card-image" style="background-image: url('${item.image}')"></div>`;
+                    // Добавлен onclick для открытия модального окна
+                    imageHtml = `<div class="card-image" style="background-image: url('${item.image}')" onclick="openModal('${item.image}')"></div>`;
                 }
 
-                // Заголовок карточки теперь БЗ
                 let contentHtml = `
                     <div class="card-title">${item.bz || 'Без БЗ'}</div>
                     
@@ -257,6 +316,10 @@
                         <span class="card-label">БЗ:</span>
                         <span class="card-value">${item.bz}</span>
                     </div>
+                    <div class="card-row">
+                        <span class="card-label">Типоразмер:</span>
+                        <span class="card-value">${item.size}</span>
+                    </div>
                 `;
 
                 card.innerHTML = imageHtml + `<div class="card-content">${contentHtml}</div>`;
@@ -264,12 +327,34 @@
             });
         }
 
+        // Функции для модального окна
+        function openModal(src) {
+            const modal = document.getElementById("imageModal");
+            const modalImg = document.getElementById("img01");
+            modal.style.display = "block";
+            modalImg.src = src;
+        }
+
+        function closeModal() {
+            const modal = document.getElementById("imageModal");
+            modal.style.display = "none";
+        }
+
+        // Закрытие по клику вне картинки
+        window.onclick = function(event) {
+            const modal = document.getElementById("imageModal");
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+
         document.getElementById('search-input').addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             const filtered = allData.filter(item => 
                 (item.project && item.project.toLowerCase().includes(term)) ||
                 (item.title && item.title.toLowerCase().includes(term)) ||
-                (item.bz && item.bz.toLowerCase().includes(term))
+                (item.bz && item.bz.toLowerCase().includes(term)) ||
+                (item.size && item.size.toLowerCase().includes(term))
             );
             renderCards(filtered);
         });
