@@ -57,7 +57,7 @@
             box-shadow: 0 8px 12px rgba(0,0,0,0.15);
         }
 
-        /* Блок медиа (картинка или PDF) */
+        /* Блок медиа */
         .card-media {
             height: 200px;
             background-color: #e0e0e0;
@@ -66,9 +66,6 @@
             flex-shrink: 0;
             cursor: pointer;
             transition: opacity 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             position: relative;
         }
 
@@ -76,26 +73,34 @@
             opacity: 0.9;
         }
 
-        /* Стиль для иконки PDF */
-        .pdf-placeholder {
-            background-color: #f4f4f9;
+        /* Кнопка для PDF */
+        .pdf-button {
             width: 100%;
             height: 100%;
+            background-color: #f4f4f9;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             color: #d32f2f;
-            font-weight: bold;
-            font-size: 14px;
-            text-align: center;
-            padding: 10px;
             box-sizing: border-box;
+            transition: background 0.2s;
+            text-decoration: none;
+            cursor: pointer;
         }
         
+        .pdf-button:hover {
+            background-color: #ffebee;
+        }
+
         .pdf-icon {
             font-size: 40px;
             margin-bottom: 10px;
+        }
+        
+        .pdf-text {
+            font-weight: bold;
+            font-size: 14px;
         }
 
         .card-content {
@@ -144,7 +149,7 @@
             top: 0;
             width: 100%; 
             height: 100%; 
-            overflow: auto; 
+            overflow: hidden; /* Скрываем скролл страницы */
             background-color: rgba(0,0,0,0.9); 
         }
 
@@ -157,13 +162,16 @@
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
             animation: zoom 0.3s;
         }
-        
-        /* Если в модалке PDF (iframe) */
-        .modal-pdf {
+
+        /* Стили для iframe (PDF) */
+        .modal-iframe {
             width: 90%;
-            height: 90vh;
-            border: none;
+            height: 85vh;
             background: white;
+            border: none;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            animation: zoom 0.3s;
         }
 
         @keyframes zoom {
@@ -218,15 +226,13 @@
         <div class="no-data">Загрузка данных...</div>
     </div>
 
-    <!-- Модальное окно -->
+    <!-- Универсальное модальное окно -->
     <div id="mediaModal" class="modal">
         <span class="close" onclick="closeModal()">&times;</span>
-        <!-- Сюда будет вставляться либо img, либо iframe -->
         <div id="modalContainer" style="width:100%; height:100%; display:flex; justify-content:center; align-items:center;"></div>
     </div>
 
     <script>
-        // Обновленная ссылка на конкретный лист
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?gid=976824630&single=true&output=csv';
 
         let allData = [];
@@ -252,7 +258,7 @@
                 const idxBZ = headers.indexOf('БЗ');
                 const idxSize = headers.indexOf('Типоразмер');
                 const idxImg = headers.indexOf('IMG');
-                const idxLink = headers.indexOf('Link'); // Колонка для PDF
+                const idxLink = headers.indexOf('Link');
 
                 allData = dataRows.map(row => {
                     const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
@@ -260,7 +266,6 @@
                     const imgUrl = getVal(idxImg);
                     const pdfUrl = getVal(idxLink);
 
-                    // Логика определения типа медиа
                     let mediaType = 'none';
                     let mediaSrc = '';
 
@@ -349,19 +354,19 @@
 
                 let mediaHtml = '';
                 
-                // Генерация блока медиа (Картинка или PDF)
                 if (item.mediaType === 'image') {
                     mediaHtml = `
                         <div class="card-media" style="background-image: url('${item.mediaSrc}')" 
                              onclick="openModal('image', '${item.mediaSrc}')">
                         </div>`;
                 } else if (item.mediaType === 'pdf') {
+                    // Клик по кнопке открывает модалку с iframe
                     mediaHtml = `
-                        <div class="card-media" style="background-color: #fff;" 
+                        <div class="card-media" style="background-color: #f4f4f9; cursor: pointer;" 
                              onclick="openModal('pdf', '${item.mediaSrc}')">
-                            <div class="pdf-placeholder">
-                                <div class="pdf-icon">📄</div>
-                                <div>Открыть PDF</div>
+                            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#d32f2f;">
+                                <div style="font-size:40px;">📄</div>
+                                <div style="font-weight:bold; font-size:14px;">Просмотр PDF</div>
                             </div>
                         </div>`;
                 }
@@ -392,7 +397,7 @@
             });
         }
 
-        // Функции для модального окна
+        // Универсальная функция открытия (Картинка или PDF)
         function openModal(type, src) {
             const modal = document.getElementById("mediaModal");
             const container = document.getElementById("modalContainer");
@@ -407,7 +412,7 @@
                 container.appendChild(img);
             } else if (type === 'pdf') {
                 const iframe = document.createElement("iframe");
-                iframe.className = "modal-pdf";
+                iframe.className = "modal-iframe";
                 iframe.src = src;
                 container.appendChild(iframe);
             }
@@ -417,12 +422,13 @@
             const modal = document.getElementById("mediaModal");
             const container = document.getElementById("modalContainer");
             modal.style.display = "none";
-            container.innerHTML = ''; // Очистка содержимого при закрытии
+            container.innerHTML = ''; // Очистка
         }
 
-        // Закрытие по клику вне контента
+        // Закрытие по клику вне окна
         window.onclick = function(event) {
             const modal = document.getElementById("mediaModal");
+            // Проверяем, что клик не по iframe (иначе могут быть проблемы с событиями)
             if (event.target == modal) {
                 closeModal();
             }
