@@ -33,6 +33,122 @@
             border-color: #4285f4;
         }
 
+        .advanced-search-btn {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .advanced-search-btn:hover {
+            background-color: #357ae8;
+        }
+
+        .advanced-search-btn.active {
+            background-color: #357ae8;
+        }
+
+        #advanced-panel {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 300px;
+            height: 100vh;
+            background-color: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 999;
+        }
+
+        #advanced-panel.visible {
+            display: block;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #4285f4;
+        }
+
+        .panel-header h3 {
+            margin: 0;
+            color: #333;
+            font-size: 18px;
+        }
+
+        .close-panel-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.3s;
+        }
+
+        .close-panel-btn:hover {
+            color: #d32f2f;
+        }
+
+        .filter-group {
+            margin-bottom: 20px;
+        }
+
+        .filter-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .filter-group select {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+            background-color: white;
+        }
+
+        .filter-group select:focus {
+            border-color: #4285f4;
+        }
+
+        .reset-filters-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .reset-filters-btn:hover {
+            background-color: #d32f2f;
+        }
+
         #cards-container {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -202,7 +318,6 @@
             user-select: none;
         }
 
-        /* Лупа увеличена (300px) */
         .lens {
             position: absolute;
             border: 3px solid rgba(255, 255, 255, 0.9);
@@ -251,12 +366,33 @@
         }
         .pdf-icon { font-size: 40px; margin-bottom: 10px; }
         .pdf-text { font-weight: bold; font-size: 14px; }
+
+        .date-badge {
+            display: inline-block;
+            background-color: #4285f4;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
 
     <div id="search-container">
         <input type="text" id="search-input" placeholder="Поиск...">
+        <button class="advanced-search-btn" onclick="toggleAdvancedSearch()">Расширенный поиск</button>
+    </div>
+
+    <div id="advanced-panel">
+        <div class="panel-header">
+            <h3>Фильтры</h3>
+            <button class="close-panel-btn" onclick="toggleAdvancedSearch()">&times;</button>
+        </div>
+        <div id="filters-container"></div>
+        <button class="reset-filters-btn" onclick="resetFilters()">Сбросить все фильтры</button>
     </div>
 
     <div id="cards-container">
@@ -290,6 +426,8 @@
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?gid=976824630&single=true&output=csv';
 
         let allData = [];
+        let filteredData = [];
+        let activeFilters = {};
         
         let scale = 1;
         let panning = false;
@@ -297,6 +435,25 @@
         let startX = 0, startY = 0;
         let imgTop = 0, imgLeft = 0;
         let lensEnabled = true;
+
+        const filterFields = [
+            { key: 'vccType', label: 'Тип ВЦК' },
+            { key: 'totalLength', label: 'Общая длина' },
+            { key: 'heaterType', label: 'Тип нагревателя' },
+            { key: 'filterCount', label: 'Кол-во фильтров' },
+            { key: 'panelAfterED', label: 'Наличие панели после ЭД' },
+            { key: 'evaporator', label: 'Испаритель' },
+            { key: 'sensor', label: 'Датчик' },
+            { key: 'street', label: 'Улица' },
+            { key: 'chrpED', label: 'ЧРП, ЭД' },
+            { key: 'serviceSide', label: 'Сторона обслуживания' },
+            { key: 'input', label: 'Вход' },
+            { key: 'output', label: 'Выход' },
+            { key: 'vertValve', label: 'Вертик. клапан' },
+            { key: 'horizValve', label: 'Гор. клапан' },
+            { key: 'thermostats', label: 'Термостаты' },
+            { key: 'date', label: 'Дата' }
+        ];
 
         function fixUrl(url) {
             if (!url) return url;
@@ -307,6 +464,13 @@
                 return url.replace('/view', '/preview');
             }
             return url;
+        }
+
+        function parseDate(dateStr) {
+            if (!dateStr) return null;
+            // Try to parse various date formats
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? null : date;
         }
 
         async function fetchData() {
@@ -330,6 +494,23 @@
                 const idxTAGB = headers.indexOf('Тег ВЦК резерв');
                 const idxImg = headers.indexOf('IMG');
                 const idxLink = headers.indexOf('Link');
+                
+                const idxVccType = headers.indexOf('Тип ВЦК');
+                const idxTotalLength = headers.indexOf('Общая длина');
+                const idxHeaterType = headers.indexOf('Тип нагревателя');
+                const idxFilterCount = headers.indexOf('Кол-во фильтров');
+                const idxPanelAfterED = headers.indexOf('Наличие панели после ЭД');
+                const idxEvaporator = headers.indexOf('Испаритель');
+                const idxSensor = headers.indexOf('Датчик');
+                const idxStreet = headers.indexOf('Улица');
+                const idxChrpED = headers.indexOf('ЧРП, ЭД');
+                const idxServiceSide = headers.indexOf('Сторона обслуживания');
+                const idxInput = headers.indexOf('Вход');
+                const idxOutput = headers.indexOf('Выход');
+                const idxVertValve = headers.indexOf('Вертик. клапан');
+                const idxHorizValve = headers.indexOf('Гор. клапан');
+                const idxThermostats = headers.indexOf('Термостаты');
+                const idxDate = headers.indexOf('Дата');
 
                 allData = dataRows.map(row => {
                     const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
@@ -351,6 +532,9 @@
                         mediaSrc = pdfUrl;
                     }
                     
+                    const dateStr = getVal(idxDate);
+                    const parsedDate = parseDate(dateStr);
+                    
                     return {
                         project: getVal(idxProject),
                         title: getVal(idxTitle),
@@ -359,12 +543,40 @@
                         taga: getVal(idxTAGA),
                         tagb: getVal(idxTAGB),
                         
+                        vccType: getVal(idxVccType),
+                        totalLength: getVal(idxTotalLength),
+                        heaterType: getVal(idxHeaterType),
+                        filterCount: getVal(idxFilterCount),
+                        panelAfterED: getVal(idxPanelAfterED),
+                        evaporator: getVal(idxEvaporator),
+                        sensor: getVal(idxSensor),
+                        street: getVal(idxStreet),
+                        chrpED: getVal(idxChrpED),
+                        serviceSide: getVal(idxServiceSide),
+                        input: getVal(idxInput),
+                        output: getVal(idxOutput),
+                        vertValve: getVal(idxVertValve),
+                        horizValve: getVal(idxHorizValve),
+                        thermostats: getVal(idxThermostats),
+                        date: dateStr,
+                        parsedDate: parsedDate,
+                        
                         mediaType: mediaType,
                         mediaSrc: mediaSrc
                     };
                 }).filter(item => item.project || item.title || item.bz || item.taga || item.tagb);
 
-                renderCards(allData);
+                // Sort by date (newest first)
+                allData.sort((a, b) => {
+                    if (!a.parsedDate && !b.parsedDate) return 0;
+                    if (!a.parsedDate) return 1;
+                    if (!b.parsedDate) return -1;
+                    return b.parsedDate - a.parsedDate;
+                });
+
+                filteredData = allData;
+                buildFilterPanel();
+                renderCards(filteredData);
 
             } catch (error) {
                 console.error('Ошибка:', error);
@@ -414,6 +626,95 @@
                 result.push(row);
             }
             return result;
+        }
+
+        function buildFilterPanel() {
+            const container = document.getElementById('filters-container');
+            container.innerHTML = '';
+
+            filterFields.forEach(field => {
+                const uniqueValues = [...new Set(allData.map(item => item[field.key]).filter(val => val))].sort();
+                
+                const group = document.createElement('div');
+                group.className = 'filter-group';
+                
+                const label = document.createElement('label');
+                label.textContent = field.label;
+                
+                const select = document.createElement('select');
+                select.id = `filter-${field.key}`;
+                select.innerHTML = '<option value="">Все</option>';
+                
+                uniqueValues.forEach(val => {
+                    const option = document.createElement('option');
+                    option.value = val;
+                    option.textContent = val;
+                    select.appendChild(option);
+                });
+                
+                select.addEventListener('change', applyFilters);
+                
+                group.appendChild(label);
+                group.appendChild(select);
+                container.appendChild(group);
+            });
+        }
+
+        function applyFilters() {
+            activeFilters = {};
+            
+            filterFields.forEach(field => {
+                const select = document.getElementById(`filter-${field.key}`);
+                if (select.value) {
+                    activeFilters[field.key] = select.value;
+                }
+            });
+            
+            filteredData = allData.filter(item => {
+                const searchInput = document.getElementById('search-input').value.toLowerCase();
+                
+                // Check text search
+                const matchesSearch = !searchInput || 
+                    (item.project && item.project.toLowerCase().includes(searchInput)) ||
+                    (item.title && item.title.toLowerCase().includes(searchInput)) ||
+                    (item.bz && item.bz.toLowerCase().includes(searchInput)) ||
+                    (item.taga && item.taga.toLowerCase().includes(searchInput)) ||
+                    (item.tagb && item.tagb.toLowerCase().includes(searchInput)) ||
+                    (item.size && item.size.toLowerCase().includes(searchInput));
+                
+                if (!matchesSearch) return false;
+                
+                // Check advanced filters
+                for (const key in activeFilters) {
+                    if (item[key] !== activeFilters[key]) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+            
+            renderCards(filteredData);
+        }
+
+        function resetFilters() {
+            filterFields.forEach(field => {
+                const select = document.getElementById(`filter-${field.key}`);
+                if (select) {
+                    select.value = '';
+                }
+            });
+            activeFilters = {};
+            filteredData = allData;
+            document.getElementById('search-input').value = '';
+            renderCards(filteredData);
+        }
+
+        function toggleAdvancedSearch() {
+            const panel = document.getElementById('advanced-panel');
+            const btn = document.querySelector('.advanced-search-btn');
+            panel.classList.toggle('visible');
+            btn.classList.toggle('active');
         }
 
         function renderCards(data) {
@@ -476,6 +777,10 @@
                     </div>
                 `;
 
+                if (item.date) {
+                    contentHtml += `<div class="date-badge">📅 ${item.date}</div>`;
+                }
+
                 card.innerHTML = mediaHtml + `<div class="card-content">${contentHtml}</div>`;
                 container.appendChild(card);
             });
@@ -537,13 +842,11 @@
             }
         }
 
-        // --- Логика Лупы (ИСПРАВЛЕНА) ---
-        
         const wrapper = document.getElementById("imgWrapper");
         const lens = document.getElementById("lens");
         const lensImg = document.getElementById("lensImg");
         const modalImg = document.getElementById("modalImg");
-        const lensRadius = 150; // Половина от 300px
+        const lensRadius = 150;
 
         wrapper.addEventListener('mousemove', function(e) {
             if (!lensEnabled) {
@@ -551,31 +854,19 @@
                 return;
             }
             
-            // Получаем реальные координаты картинки на экране
             const rect = modalImg.getBoundingClientRect();
-            
-            // Координаты мыши относительно левого верхнего угла картинки
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
-            // Проверяем, находится ли мышь над картинкой
             if (mouseX >= 0 && mouseX <= rect.width && mouseY >= 0 && mouseY <= rect.height) {
                 lens.style.display = "block";
-                
-                // 1. Позиция лупы (центр лупы = курсор мыши)
                 lens.style.left = (e.clientX - lensRadius) + "px";
                 lens.style.top = (e.clientY - lensRadius) + "px";
                 
-                // 2. Настройка картинки внутри лупы
-                // Увеличиваем картинку внутри лупы в 2.5 раза
                 const zoomFactor = 1.5;
-                
-                // Ширина картинки в лупе должна быть равна ширине оригинала * зум
                 lensImg.style.width = (rect.width * zoomFactor) + "px";
                 lensImg.style.height = (rect.height * zoomFactor) + "px";
                 
-                // 3. Смещение картинки внутри лупы
-                // Сдвигаем картинку так, чтобы под лупой было то, что под мышкой
                 const bgX = -mouseX * zoomFactor + lensRadius;
                 const bgY = -mouseY * zoomFactor + lensRadius;
                 
@@ -589,10 +880,7 @@
             lens.style.display = "none";
         });
 
-        // --- Перемещение (Drag & Drop) ---
-        
         wrapper.addEventListener('mousedown', function(e) {
-            // Не перетаскиваем, если кликнули по кнопкам (хотя они вне wrapper, но на всякий случай)
             panning = true;
             startX = e.clientX - imgLeft;
             startY = e.clientY - imgTop;
@@ -613,7 +901,6 @@
             updateTransform();
         });
 
-        // Тачскрин
         wrapper.addEventListener('touchstart', function(e) {
             panning = true;
             startX = e.touches[0].clientX - imgLeft;
@@ -633,17 +920,8 @@
             updateTransform();
         }, {passive: false});
 
-        document.getElementById('search-input').addEventListener('input', (e) => {
-            const term = e.target.value.toLowerCase();
-            const filtered = allData.filter(item => 
-                (item.project && item.project.toLowerCase().includes(term)) ||
-                (item.title && item.title.toLowerCase().includes(term)) ||
-                (item.bz && item.bz.toLowerCase().includes(term)) ||
-                (item.taga && item.taga.toLowerCase().includes(term)) ||
-                (item.tagb && item.tagb.toLowerCase().includes(term)) ||
-                (item.size && item.size.toLowerCase().includes(term))
-            );
-            renderCards(filtered);
+        document.getElementById('search-input').addEventListener('input', () => {
+            applyFilters();
         });
 
         fetchData();
