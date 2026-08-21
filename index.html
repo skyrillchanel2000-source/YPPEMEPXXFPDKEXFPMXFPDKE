@@ -108,42 +108,42 @@
             word-wrap: break-word;
         }
         
+        /* Модальное окно */
         .modal {
             display: none; 
             position: fixed; 
             z-index: 1000; 
-            padding-top: 60px; 
             left: 0;
             top: 0;
             width: 100%; 
             height: 100%; 
+            background-color: rgba(0,0,0,0.95); 
             overflow: hidden;
-            background-color: rgba(0,0,0,0.9); 
         }
 
-        .modal-content {
-            margin: auto;
-            display: block;
-            max-width: 90%;
-            max-height: 90vh;
-            border-radius: 4px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            animation: zoom 0.3s;
+        /* Контейнер для картинки (чтобы двигать её) */
+        .modal-content-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: grab;
+            position: relative;
         }
 
-        .modal-iframe {
-            width: 90%;
-            height: 85vh;
-            background: white;
-            border: none;
-            border-radius: 4px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            animation: zoom 0.3s;
+        .modal-content-wrapper:active {
+            cursor: grabbing;
         }
 
-        @keyframes zoom {
-            from {transform:scale(0)} 
-            to {transform:scale(1)}
+        .modal-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            transition: transform 0.1s ease-out; /* Плавность для зума */
+            transform-origin: center center;
+            user-select: none;
+            -webkit-user-drag: none;
         }
 
         .close {
@@ -155,14 +155,74 @@
             font-weight: bold;
             transition: 0.3s;
             cursor: pointer;
-            z-index: 1001;
+            z-index: 1002;
         }
 
-        .close:hover,
-        .close:focus {
-            color: #bbb;
-            text-decoration: none;
+        .close:hover { color: #bbb; }
+
+        /* Панель управления */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            z-index: 1002;
+            backdrop-filter: blur(5px);
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 20px;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            user-select: none;
+        }
+
+        .btn:hover { background: rgba(255, 255, 255, 0.4); }
+        .btn:active { transform: scale(0.95); }
+
+        .toggle-label {
+            color: white;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* Лупа */
+        .lens {
+            position: absolute;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            width: 150px;
+            height: 150px;
+            overflow: hidden;
+            z-index: 1001;
+            display: none;
+            pointer-events: none; /* Чтобы не мешала событиям мыши */
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            background: white;
+        }
+
+        .lens-img {
+            position: absolute;
+            transform-origin: 0 0;
         }
         
         .error-msg {
@@ -206,25 +266,50 @@
         <div class="no-data">Загрузка данных...</div>
     </div>
 
+    <!-- Модальное окно -->
     <div id="mediaModal" class="modal">
         <span class="close" onclick="closeModal()">&times;</span>
-        <div id="modalContainer" style="width:100%; height:100%; display:flex; justify-content:center; align-items:center;"></div>
+        
+        <div class="modal-content-wrapper" id="imgWrapper">
+            <img id="modalImg" class="modal-img" src="" alt="">
+        </div>
+        
+        <!-- Лупа -->
+        <div id="lens" class="lens">
+            <img id="lensImg" class="lens-img" src="" alt="">
+        </div>
+
+        <!-- Кнопки управления -->
+        <div class="controls">
+            <div class="btn" onclick="zoomIn()">+</div>
+            <div class="btn" onclick="zoomOut()">-</div>
+            <div class="btn" onclick="resetZoom()" style="font-size: 12px; width: 50px;">Сброс</div>
+            
+            <label class="toggle-label">
+                <input type="checkbox" id="lensToggle" checked onchange="toggleLens()">
+                Лупа
+            </label>
+        </div>
     </div>
 
     <script>
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?gid=976824630&single=true&output=csv';
 
         let allData = [];
+        
+        // Переменные для зума и перемещения
+        let scale = 1;
+        let panning = false;
+        let pointX = 0, pointY = 0;
+        let startX = 0, startY = 0;
+        let imgTop = 0, imgLeft = 0;
+        let lensEnabled = true;
 
-        // Функция исправления ссылок (GitHub и Google Drive)
         function fixUrl(url) {
             if (!url) return url;
-            
-            // GitHub: blob -> raw
             if (url.includes('github.com') && url.includes('/blob/')) {
                 return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
             }
-            // Google Drive: view -> preview
             if (url.includes('drive.google.com') && url.includes('/view')) {
                 return url.replace('/view', '/preview');
             }
@@ -257,7 +342,6 @@
                     let imgUrl = getVal(idxImg);
                     let pdfUrl = getVal(idxLink);
 
-                    // Исправляем ссылки
                     imgUrl = fixUrl(imgUrl);
                     pdfUrl = fixUrl(pdfUrl);
 
@@ -392,39 +476,145 @@
         }
 
         function openModal(type, src) {
-            // Если PDF - пробуем открыть в iframe, но если не выйдет - новая вкладка
             if (type === 'pdf') {
-                // Для надежности сразу открываем в новой вкладке, 
-                // так как браузеры часто блокируют PDF внутри iframe
                 window.open(src, '_blank');
                 return;
             }
 
-            // Для картинок открываем модальное окно
             const modal = document.getElementById("mediaModal");
-            const container = document.getElementById("modalContainer");
+            const img = document.getElementById("modalImg");
+            const lensImg = document.getElementById("lensImg");
+            
             modal.style.display = "block";
-            container.innerHTML = '';
-
-            const img = document.createElement("img");
-            img.className = "modal-content";
             img.src = src;
-            container.appendChild(img);
+            lensImg.src = src;
+            
+            // Сброс настроек при открытии
+            scale = 1;
+            imgTop = 0;
+            imgLeft = 0;
+            updateTransform();
         }
 
         function closeModal() {
-            const modal = document.getElementById("mediaModal");
-            const container = document.getElementById("modalContainer");
-            modal.style.display = "none";
-            container.innerHTML = '';
+            document.getElementById("mediaModal").style.display = "none";
+            document.getElementById("lens").style.display = "none";
         }
 
-        window.onclick = function(event) {
-            const modal = document.getElementById("mediaModal");
-            if (event.target == modal) {
-                closeModal();
+        // --- Логика Зума и Перемещения ---
+        
+        function updateTransform() {
+            const img = document.getElementById("modalImg");
+            img.style.transform = `translate(${imgLeft}px, ${imgTop}px) scale(${scale})`;
+        }
+
+        function zoomIn() {
+            scale += 0.5;
+            updateTransform();
+        }
+
+        function zoomOut() {
+            if (scale > 0.5) {
+                scale -= 0.5;
+                updateTransform();
             }
         }
+
+        function resetZoom() {
+            scale = 1;
+            imgTop = 0;
+            imgLeft = 0;
+            updateTransform();
+        }
+
+        function toggleLens() {
+            lensEnabled = document.getElementById("lensToggle").checked;
+            if (!lensEnabled) {
+                document.getElementById("lens").style.display = "none";
+            }
+        }
+
+        // --- Логика Лупы ---
+        
+        const wrapper = document.getElementById("imgWrapper");
+        const lens = document.getElementById("lens");
+        const lensImg = document.getElementById("lensImg");
+        const modalImg = document.getElementById("modalImg");
+
+        wrapper.addEventListener('mousemove', function(e) {
+            if (!lensEnabled || scale <= 1) {
+                lens.style.display = "none";
+                return;
+            }
+            
+            lens.style.display = "block";
+            
+            // Позиция курсора относительно картинки
+            const rect = modalImg.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Позиция лупы (следует за курсором)
+            lens.style.left = (e.clientX - 75) + "px"; // 75 = половина ширины лупы
+            lens.style.top = (e.clientY - 75) + "px";
+            
+            // Настройка картинки внутри лупы
+            lensImg.style.width = (modalImg.width * scale) + "px";
+            lensImg.style.height = (modalImg.height * scale) + "px";
+            
+            // Смещение картинки в лупе
+            const lensX = -x * scale + 75; // Центрирование
+            const lensY = -y * scale + 75;
+            
+            lensImg.style.transform = `translate(${lensX}px, ${lensY}px)`;
+        });
+
+        wrapper.addEventListener('mouseleave', function() {
+            lens.style.display = "none";
+        });
+
+        // --- Перемещение (Drag & Drop) ---
+        
+        wrapper.addEventListener('mousedown', function(e) {
+            panning = true;
+            startX = e.clientX - imgLeft;
+            startY = e.clientY - imgTop;
+            wrapper.style.cursor = 'grabbing';
+            lens.style.display = "none"; // Скрываем лупу при перетаскивании
+        });
+
+        window.addEventListener('mouseup', function() {
+            panning = false;
+            wrapper.style.cursor = 'grab';
+        });
+
+        window.addEventListener('mousemove', function(e) {
+            if (!panning) return;
+            e.preventDefault();
+            imgLeft = e.clientX - startX;
+            imgTop = e.clientY - startY;
+            updateTransform();
+        });
+
+        // Поддержка тачскрина (телефон)
+        wrapper.addEventListener('touchstart', function(e) {
+            panning = true;
+            startX = e.touches[0].clientX - imgLeft;
+            startY = e.touches[0].clientY - imgTop;
+            lens.style.display = "none";
+        }, {passive: false});
+
+        window.addEventListener('touchend', function() {
+            panning = false;
+        });
+
+        window.addEventListener('touchmove', function(e) {
+            if (!panning) return;
+            e.preventDefault(); // Блокируем скролл страницы
+            imgLeft = e.touches[0].clientX - startX;
+            imgTop = e.touches[0].clientY - startY;
+            updateTransform();
+        }, {passive: false});
 
         document.getElementById('search-input').addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
