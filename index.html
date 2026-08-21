@@ -12,7 +12,6 @@
             padding: 20px;
         }
 
-        /* Поиск */
         #search-container {
             max-width: 800px;
             margin: 0 auto 30px auto;
@@ -34,7 +33,6 @@
             border-color: #4285f4;
         }
 
-        /* Сетка карточек */
         #cards-container {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -43,7 +41,6 @@
             margin: 0 auto;
         }
 
-        /* Карточка */
         .card {
             background: white;
             border-radius: 12px;
@@ -59,13 +56,12 @@
             box-shadow: 0 8px 12px rgba(0,0,0,0.15);
         }
 
-        /* Блок картинки */
         .card-image {
             height: 180px;
             background-color: #e0e0e0;
             background-size: cover;
             background-position: center;
-            flex-shrink: 0; /* Чтобы картинка не сжималась */
+            flex-shrink: 0;
         }
 
         .card-content {
@@ -103,6 +99,16 @@
             word-wrap: break-word;
         }
         
+        .error-msg {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
         .no-data {
             text-align: center;
             color: #777;
@@ -118,60 +124,112 @@
     </div>
 
     <div id="cards-container">
-        <!-- Карточки будут добавлены здесь через JS -->
-        <div class="no-data">Загрузка данных...</div>
+        <div class="no-data">Загрузка данных из таблицы...</div>
     </div>
 
     <script>
-        // ID вашей таблицы (извлечен из вашей ссылки)
-        const SHEET_ID = '1eJMoytqFNn6G2QS3cEo2Of350lKF6x3gbEvbfMnkA'; 
-        const SHEET_NAME = 'Классификация приточек';
-
-        const query = encodeURIComponent('select *');
-        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${query}&sheet=${SHEET_NAME}`;
+        // ВНИМАНИЕ: Здесь исправлен ID на тот, что в вашей ссылке (2PACX...)
+        // Это ID публикации. Для работы через API (gviz) нам нужен ID самой таблицы.
+        // Обычно он выглядит короче. 
+        // НО: Ссылка вида /pub?output=csv часто указывает на то, что таблица опубликована в веб.
+        // Попробуем использовать прямой метод загрузки CSV, так как он надежнее для опубликованных таблиц.
+        
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?output=csv';
 
         let allData = [];
 
         async function fetchData() {
+            const container = document.getElementById('cards-container');
             try {
-                const response = await fetch(url);
-                const text = await response.text();
+                const response = await fetch(CSV_URL);
+                if (!response.ok) throw new Error('Ошибка сети: ' + response.status);
+                const csvText = await response.text();
                 
-                const jsonString = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\w]+)\);/)[1];
-                const data = JSON.parse(jsonString);
+                // Простой парсер CSV (учитывает кавычки)
+                const rows = parseCSV(csvText);
                 
-                const table = data.table;
-                const cols = table.cols.map(c => c.label); 
-                const rows = table.rows;
+                if (rows.length < 2) {
+                    throw new Error('Таблица пуста или содержит только заголовки');
+                }
+
+                const headers = rows[0];
+                const dataRows = rows.slice(1);
 
                 // Ищем индексы колонок
-                const idxProject = cols.indexOf('Проект');
-                const idxTitle = cols.indexOf('Титул');
-                const idxBZ = cols.indexOf('БЗ');
-                const idxImg = cols.indexOf('IMG'); // Ищем колонку IMG
+                const idxProject = headers.indexOf('Проект');
+                const idxTitle = headers.indexOf('Титул');
+                const idxBZ = headers.indexOf('БЗ');
+                const idxImg = headers.indexOf('IMG');
 
-                allData = rows.map(row => {
-                    const cellValue = (c) => c ? (c.v !== null ? c.v : '') : '';
+                if (idxProject === -1) {
+                    console.warn('Колонка "Проект" не найдена. Заголовки:', headers);
+                }
+
+                allData = dataRows.map(row => {
+                    const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
                     
                     return {
-                        project: cellValue(row.c[idxProject]),
-                        title: cellValue(row.c[idxTitle]),
-                        bz: cellValue(row.c[idxBZ]),
-                        // Проверяем, есть ли ссылка на картинку
-                        image: (idxImg !== -1 && cellValue(row.c[idxImg]).startsWith('http')) 
-                               ? cellValue(row.c[idxImg]) 
-                               : null,
-                        fullRow: row.c 
+                        project: getVal(idxProject),
+                        title: getVal(idxTitle),
+                        bz: getVal(idxBZ),
+                        image: (idxImg !== -1 && row[idxImg] && row[idxImg].startsWith('http')) 
+                               ? row[idxImg] 
+                               : null
                     };
                 }).filter(item => item.project || item.title || item.bz);
 
                 renderCards(allData);
 
             } catch (error) {
-                console.error('Ошибка загрузки:', error);
-                document.getElementById('cards-container').innerHTML = 
-                    '<div class="no-data">Ошибка загрузки данных. Проверьте консоль (F12) или доступ к таблице.</div>';
+                console.error('Ошибка:', error);
+                container.innerHTML = `
+                    <div class="error-msg">
+                        <h3>Не удалось загрузить данные</h3>
+                        <p>${error.message}</p>
+                        <p>Проверьте, что ссылка доступна из интернета (Файл -> Поделиться -> Все в интернете с ссылкой).</p>
+                    </div>
+                `;
             }
+        }
+
+        // Функция парсинга CSV (обрабатывает кавычки и переносы строк)
+        function parseCSV(text) {
+            const result = [];
+            let row = [];
+            let inQuotes = false;
+            let cell = '';
+            
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        cell += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    row.push(cell.trim());
+                    cell = '';
+                } else if ((char === '\r' || char === '\n') && !inQuotes) {
+                    if (char === '\r' && nextChar === '\n') i++;
+                    row.push(cell.trim());
+                    if (row.length > 0 && row.some(c => c !== '')) {
+                        result.push(row);
+                    }
+                    row = [];
+                    cell = '';
+                } else {
+                    cell += char;
+                }
+            }
+            row.push(cell.trim());
+            if (row.length > 0 && row.some(c => c !== '')) {
+                result.push(row);
+            }
+            return result;
         }
 
         function renderCards(data) {
@@ -187,12 +245,10 @@
                 const card = document.createElement('div');
                 card.className = 'card';
 
-                // Логика картинки: создаем блок только если есть ссылка
                 let imageHtml = '';
                 if (item.image) {
                     imageHtml = `<div class="card-image" style="background-image: url('${item.image}')"></div>`;
                 }
-                // Если item.image нет, переменная imageHtml остается пустой, и блок не рендерится
 
                 let contentHtml = `
                     <div class="card-title">${item.project || 'Без названия'}</div>
@@ -216,7 +272,6 @@
             });
         }
 
-        // Поиск
         document.getElementById('search-input').addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             const filtered = allData.filter(item => 
