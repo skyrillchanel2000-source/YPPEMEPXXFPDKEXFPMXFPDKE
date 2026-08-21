@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Классификация приточек</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+
+        /* Поиск */
+        #search-container {
+            max-width: 800px;
+            margin: 0 auto 30px auto;
+            text-align: center;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #search-input:focus {
+            border-color: #4285f4;
+        }
+
+        /* Сетка карточек */
+        #cards-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Карточка */
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.15);
+        }
+
+        .card-image {
+            height: 180px;
+            background-color: #e0e0e0;
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #757575;
+            font-size: 14px;
+        }
+
+        .card-content {
+            padding: 20px;
+            flex-grow: 1;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #4285f4;
+            padding-bottom: 10px;
+        }
+
+        .card-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .card-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .card-value {
+            color: #333;
+            text-align: right;
+            max-width: 60%;
+            word-wrap: break-word;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: #777;
+            grid-column: 1 / -1;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="Поиск по проекту, титулу или БЗ...">
+    </div>
+
+    <div id="cards-container">
+        <!-- Карточки будут добавлены здесь через JS -->
+        <div class="no-data">Загрузка данных...</div>
+    </div>
+
+    <script>
+        // ID вашей таблицы
+        const SHEET_ID = '1eJMoytqFNn6G2QS3cEo2Of350lKF6x3gbEvbfMnkA'; 
+        // Примечание: Я использовал ID из вашего URL. Если данные не грузятся, 
+        // возможно, таблица требует доступа. Убедитесь, что доступ "Все в интернете с ссылкой" установлен.
+        
+        // Имя листа
+        const SHEET_NAME = 'Классификация приточек';
+
+        // Формируем запрос к Google Visualization API
+        const query = encodeURIComponent('select *');
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${query}&sheet=${SHEET_NAME}`;
+
+        let allData = [];
+
+        async function fetchData() {
+            try {
+                const response = await fetch(url);
+                const text = await response.text();
+                
+                // Google возвращает данные в формате JSONP, нужно очистить от обертки
+                const jsonString = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\w]+)\);/)[1];
+                const data = JSON.parse(jsonString);
+                
+                const table = data.table;
+                const cols = table.cols.map(c => c.label); // Заголовки колонок
+                const rows = table.rows;
+
+                // Находим индексы нужных колонок
+                const idxProject = cols.indexOf('Проект');
+                const idxTitle = cols.indexOf('Титул');
+                const idxBZ = cols.indexOf('БЗ');
+                const idxImage = cols.indexOf('Изображение'); // Предполагаем, что есть колонка с ссылкой на картинку
+
+                allData = rows.map(row => {
+                    const cellValue = (c) => c ? (c.v !== null ? c.v : '') : '';
+                    
+                    // Формируем объект для карточки
+                    return {
+                        project: cellValue(row.c[idxProject]),
+                        title: cellValue(row.c[idxTitle]),
+                        bz: cellValue(row.c[idxBZ]),
+                        image: idxImage !== -1 ? cellValue(row.c[idxImage]) : null,
+                        fullRow: row.c // Сохраняем всю строку на случай, если нужно показать всё
+                    };
+                }).filter(item => item.project || item.title || item.bz); // Убираем пустые строки
+
+                renderCards(allData);
+
+            } catch (error) {
+                console.error('Ошибка загрузки:', error);
+                document.getElementById('cards-container').innerHTML = 
+                    '<div class="no-data">Ошибка загрузки данных. Проверьте консоль (F12) или доступ к таблице.</div>';
+            }
+        }
+
+        function renderCards(data) {
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+
+            if (data.length === 0) {
+                container.innerHTML = '<div class="no-data">Ничего не найдено</div>';
+                return;
+            }
+
+            data.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                // Картинка
+                let imageHtml = '<div class="card-image">Нет изображения</div>';
+                if (item.image && item.image.startsWith('http')) {
+                    imageHtml = `<div class="card-image" style="background-image: url('${item.image}')"></div>`;
+                }
+
+                // Формирование содержимого карточки
+                // Берем первые 3 параметра как просили: Проект, Титул, БЗ
+                // Но также можно добавить остальные колонки динамически, если нужно.
+                // Сейчас сделаем строго по ТЗ: 3 блока.
+                
+                let contentHtml = `
+                    <div class="card-title">${item.project || 'Без названия'}</div>
+                    
+                    <div class="card-row">
+                        <span class="card-label">Проект:</span>
+                        <span class="card-value">${item.project}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Титул:</span>
+                        <span class="card-value">${item.title}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">БЗ:</span>
+                        <span class="card-value">${item.bz}</span>
+                    </div>
+                `;
+
+                // Если нужно вывести ВСЕ остальные колонки таблицы, можно раскомментировать этот блок:
+                /*
+                item.fullRow.forEach((cell, index) => {
+                    const val = cell ? (cell.v !== null ? cell.v : '') : '';
+                    const label = cols[index];
+                    if (val && !['Проект', 'Титул', 'БЗ', 'Изображение'].includes(label)) {
+                         contentHtml += `
+                            <div class="card-row">
+                                <span class="card-label">${label}:</span>
+                                <span class="card-value">${val}</span>
+                            </div>
+                        `;
+                    }
+                });
+                */
+
+                card.innerHTML = imageHtml + `<div class="card-content">${contentHtml}</div>`;
+                container.appendChild(card);
+            });
+        }
+
+        // Поиск
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = allData.filter(item => 
+                (item.project && item.project.toLowerCase().includes(term)) ||
+                (item.title && item.title.toLowerCase().includes(term)) ||
+                (item.bz && item.bz.toLowerCase().includes(term))
+            );
+            renderCards(filtered);
+        });
+
+        // Запуск
+        fetchData();
+    </script>
+</body>
+</html>
