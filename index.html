@@ -57,7 +57,6 @@
             box-shadow: 0 8px 12px rgba(0,0,0,0.15);
         }
 
-        /* Блок медиа */
         .card-media {
             height: 200px;
             background-color: #e0e0e0;
@@ -71,36 +70,6 @@
 
         .card-media:hover {
             opacity: 0.9;
-        }
-
-        /* Кнопка для PDF */
-        .pdf-button {
-            width: 100%;
-            height: 100%;
-            background-color: #f4f4f9;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #d32f2f;
-            box-sizing: border-box;
-            transition: background 0.2s;
-            text-decoration: none;
-            cursor: pointer;
-        }
-        
-        .pdf-button:hover {
-            background-color: #ffebee;
-        }
-
-        .pdf-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
-        }
-        
-        .pdf-text {
-            font-weight: bold;
-            font-size: 14px;
         }
 
         .card-content {
@@ -149,7 +118,7 @@
             top: 0;
             width: 100%; 
             height: 100%; 
-            overflow: hidden; /* Скрываем скролл страницы */
+            overflow: hidden;
             background-color: rgba(0,0,0,0.9); 
         }
 
@@ -163,7 +132,6 @@
             animation: zoom 0.3s;
         }
 
-        /* Стили для iframe (PDF) */
         .modal-iframe {
             width: 90%;
             height: 85vh;
@@ -214,6 +182,20 @@
             grid-column: 1 / -1;
             padding: 40px;
         }
+        
+        /* Индикатор PDF внутри карточки */
+        .pdf-indicator {
+            width: 100%;
+            height: 100%;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #d32f2f;
+        }
+        .pdf-icon { font-size: 40px; margin-bottom: 10px; }
+        .pdf-text { font-weight: bold; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -226,7 +208,6 @@
         <div class="no-data">Загрузка данных...</div>
     </div>
 
-    <!-- Универсальное модальное окно -->
     <div id="mediaModal" class="modal">
         <span class="close" onclick="closeModal()">&times;</span>
         <div id="modalContainer" style="width:100%; height:100%; display:flex; justify-content:center; align-items:center;"></div>
@@ -245,10 +226,7 @@
                 const csvText = await response.text();
                 
                 const rows = parseCSV(csvText);
-                
-                if (rows.length < 2) {
-                    throw new Error('Таблица пуста');
-                }
+                if (rows.length < 2) throw new Error('Таблица пуста');
 
                 const headers = rows[0];
                 const dataRows = rows.slice(1);
@@ -264,7 +242,13 @@
                     const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
                     
                     const imgUrl = getVal(idxImg);
-                    const pdfUrl = getVal(idxLink);
+                    let pdfUrl = getVal(idxLink);
+
+                    // АВТО-КОНВЕРТАЦИЯ ССЫЛОК GITHUB
+                    // Если ссылка вида github.com/.../blob/..., меняем на raw.githubusercontent.com
+                    if (pdfUrl && pdfUrl.includes('github.com') && pdfUrl.includes('/blob/')) {
+                        pdfUrl = pdfUrl.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+                    }
 
                     let mediaType = 'none';
                     let mediaSrc = '';
@@ -360,13 +344,12 @@
                              onclick="openModal('image', '${item.mediaSrc}')">
                         </div>`;
                 } else if (item.mediaType === 'pdf') {
-                    // Клик по кнопке открывает модалку с iframe
                     mediaHtml = `
                         <div class="card-media" style="background-color: #f4f4f9; cursor: pointer;" 
                              onclick="openModal('pdf', '${item.mediaSrc}')">
-                            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#d32f2f;">
-                                <div style="font-size:40px;">📄</div>
-                                <div style="font-weight:bold; font-size:14px;">Просмотр PDF</div>
+                            <div class="pdf-indicator">
+                                <div class="pdf-icon">📄</div>
+                                <div class="pdf-text">Просмотр PDF</div>
                             </div>
                         </div>`;
                 }
@@ -397,13 +380,11 @@
             });
         }
 
-        // Универсальная функция открытия (Картинка или PDF)
         function openModal(type, src) {
             const modal = document.getElementById("mediaModal");
             const container = document.getElementById("modalContainer");
             modal.style.display = "block";
-            
-            container.innerHTML = ''; // Очистка
+            container.innerHTML = '';
 
             if (type === 'image') {
                 const img = document.createElement("img");
@@ -422,13 +403,11 @@
             const modal = document.getElementById("mediaModal");
             const container = document.getElementById("modalContainer");
             modal.style.display = "none";
-            container.innerHTML = ''; // Очистка
+            container.innerHTML = '';
         }
 
-        // Закрытие по клику вне окна
         window.onclick = function(event) {
             const modal = document.getElementById("mediaModal");
-            // Проверяем, что клик не по iframe (иначе могут быть проблемы с событиями)
             if (event.target == modal) {
                 closeModal();
             }
