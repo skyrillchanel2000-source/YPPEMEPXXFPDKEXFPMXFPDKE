@@ -108,7 +108,6 @@
             word-wrap: break-word;
         }
         
-        /* Модальное окно */
         .modal {
             display: none; 
             position: fixed; 
@@ -121,7 +120,6 @@
             overflow: hidden;
         }
 
-        /* Контейнер для картинки (чтобы двигать её) */
         .modal-content-wrapper {
             width: 100%;
             height: 100%;
@@ -140,7 +138,7 @@
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
-            transition: transform 0.1s ease-out; /* Плавность для зума */
+            transition: transform 0.1s ease-out;
             transform-origin: center center;
             user-select: none;
             -webkit-user-drag: none;
@@ -160,7 +158,6 @@
 
         .close:hover { color: #bbb; }
 
-        /* Панель управления */
         .controls {
             position: absolute;
             bottom: 20px;
@@ -205,18 +202,18 @@
             user-select: none;
         }
 
-        /* Лупа */
+        /* Лупа увеличена (300px) */
         .lens {
             position: absolute;
-            border: 2px solid rgba(255, 255, 255, 0.8);
+            border: 3px solid rgba(255, 255, 255, 0.9);
             border-radius: 50%;
-            width: 150px;
-            height: 150px;
+            width: 300px;
+            height: 300px;
             overflow: hidden;
             z-index: 1001;
             display: none;
-            pointer-events: none; /* Чтобы не мешала событиям мыши */
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            pointer-events: none;
+            box-shadow: 0 0 15px rgba(0,0,0,0.7);
             background: white;
         }
 
@@ -266,7 +263,6 @@
         <div class="no-data">Загрузка данных...</div>
     </div>
 
-    <!-- Модальное окно -->
     <div id="mediaModal" class="modal">
         <span class="close" onclick="closeModal()">&times;</span>
         
@@ -274,12 +270,10 @@
             <img id="modalImg" class="modal-img" src="" alt="">
         </div>
         
-        <!-- Лупа -->
         <div id="lens" class="lens">
             <img id="lensImg" class="lens-img" src="" alt="">
         </div>
 
-        <!-- Кнопки управления -->
         <div class="controls">
             <div class="btn" onclick="zoomIn()">+</div>
             <div class="btn" onclick="zoomOut()">-</div>
@@ -297,7 +291,6 @@
 
         let allData = [];
         
-        // Переменные для зума и перемещения
         let scale = 1;
         let panning = false;
         let pointX = 0, pointY = 0;
@@ -489,7 +482,6 @@
             img.src = src;
             lensImg.src = src;
             
-            // Сброс настроек при открытии
             scale = 1;
             imgTop = 0;
             imgLeft = 0;
@@ -501,8 +493,6 @@
             document.getElementById("lens").style.display = "none";
         }
 
-        // --- Логика Зума и Перемещения ---
-        
         function updateTransform() {
             const img = document.getElementById("modalImg");
             img.style.transform = `translate(${imgLeft}px, ${imgTop}px) scale(${scale})`;
@@ -534,39 +524,52 @@
             }
         }
 
-        // --- Логика Лупы ---
+        // --- Логика Лупы (ИСПРАВЛЕНА) ---
         
         const wrapper = document.getElementById("imgWrapper");
         const lens = document.getElementById("lens");
         const lensImg = document.getElementById("lensImg");
         const modalImg = document.getElementById("modalImg");
+        const lensRadius = 150; // Половина от 300px
 
         wrapper.addEventListener('mousemove', function(e) {
-            if (!lensEnabled || scale <= 1) {
+            if (!lensEnabled) {
                 lens.style.display = "none";
                 return;
             }
             
-            lens.style.display = "block";
-            
-            // Позиция курсора относительно картинки
+            // Получаем реальные координаты картинки на экране
             const rect = modalImg.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
             
-            // Позиция лупы (следует за курсором)
-            lens.style.left = (e.clientX - 75) + "px"; // 75 = половина ширины лупы
-            lens.style.top = (e.clientY - 75) + "px";
+            // Координаты мыши относительно левого верхнего угла картинки
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
             
-            // Настройка картинки внутри лупы
-            lensImg.style.width = (modalImg.width * scale) + "px";
-            lensImg.style.height = (modalImg.height * scale) + "px";
-            
-            // Смещение картинки в лупе
-            const lensX = -x * scale + 75; // Центрирование
-            const lensY = -y * scale + 75;
-            
-            lensImg.style.transform = `translate(${lensX}px, ${lensY}px)`;
+            // Проверяем, находится ли мышь над картинкой
+            if (mouseX >= 0 && mouseX <= rect.width && mouseY >= 0 && mouseY <= rect.height) {
+                lens.style.display = "block";
+                
+                // 1. Позиция лупы (центр лупы = курсор мыши)
+                lens.style.left = (e.clientX - lensRadius) + "px";
+                lens.style.top = (e.clientY - lensRadius) + "px";
+                
+                // 2. Настройка картинки внутри лупы
+                // Увеличиваем картинку внутри лупы в 2.5 раза
+                const zoomFactor = 2.5;
+                
+                // Ширина картинки в лупе должна быть равна ширине оригинала * зум
+                lensImg.style.width = (rect.width * zoomFactor) + "px";
+                lensImg.style.height = (rect.height * zoomFactor) + "px";
+                
+                // 3. Смещение картинки внутри лупы
+                // Сдвигаем картинку так, чтобы под лупой было то, что под мышкой
+                const bgX = -mouseX * zoomFactor + lensRadius;
+                const bgY = -mouseY * zoomFactor + lensRadius;
+                
+                lensImg.style.transform = `translate(${bgX}px, ${bgY}px)`;
+            } else {
+                lens.style.display = "none";
+            }
         });
 
         wrapper.addEventListener('mouseleave', function() {
@@ -576,11 +579,12 @@
         // --- Перемещение (Drag & Drop) ---
         
         wrapper.addEventListener('mousedown', function(e) {
+            // Не перетаскиваем, если кликнули по кнопкам (хотя они вне wrapper, но на всякий случай)
             panning = true;
             startX = e.clientX - imgLeft;
             startY = e.clientY - imgTop;
             wrapper.style.cursor = 'grabbing';
-            lens.style.display = "none"; // Скрываем лупу при перетаскивании
+            lens.style.display = "none";
         });
 
         window.addEventListener('mouseup', function() {
@@ -596,7 +600,7 @@
             updateTransform();
         });
 
-        // Поддержка тачскрина (телефон)
+        // Тачскрин
         wrapper.addEventListener('touchstart', function(e) {
             panning = true;
             startX = e.touches[0].clientX - imgLeft;
@@ -610,7 +614,7 @@
 
         window.addEventListener('touchmove', function(e) {
             if (!panning) return;
-            e.preventDefault(); // Блокируем скролл страницы
+            e.preventDefault();
             imgLeft = e.touches[0].clientX - startX;
             imgTop = e.touches[0].clientY - startY;
             updateTransform();
