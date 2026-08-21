@@ -326,6 +326,8 @@
                 const idxTitle = headers.indexOf('Титул');
                 const idxBZ = headers.indexOf('БЗ');
                 const idxSize = headers.indexOf('Типоразмер');
+                const idxTAGA = headers.indexOf('Тег ВЦК основной');
+                const idxTAGB = headers.indexOf('Тег ВЦК резерв');
                 const idxImg = headers.indexOf('IMG');
                 const idxLink = headers.indexOf('Link');
 
@@ -354,10 +356,13 @@
                         title: getVal(idxTitle),
                         bz: getVal(idxBZ),
                         size: getVal(idxSize),
+                        taga: getVal(idxTAGA),
+                        tagb: getVal(idxTAGB),
+                        
                         mediaType: mediaType,
                         mediaSrc: mediaSrc
                     };
-                }).filter(item => item.project || item.title || item.bz);
+                }).filter(item => item.project || item.title || item.bz || item.taga || item.tagb);
 
                 renderCards(allData);
 
@@ -456,6 +461,14 @@
                     <div class="card-row">
                         <span class="card-label">БЗ:</span>
                         <span class="card-value">${item.bz}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Тег основной:</span>
+                        <span class="card-value">${item.taga}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Тег резервный:</span>
+                        <span class="card-value">${item.tagb}</span>
                     </div>
                     <div class="card-row">
                         <span class="card-label">Типоразмер:</span>
@@ -626,6 +639,8 @@
                 (item.project && item.project.toLowerCase().includes(term)) ||
                 (item.title && item.title.toLowerCase().includes(term)) ||
                 (item.bz && item.bz.toLowerCase().includes(term)) ||
+                (item.taga && item.taga.toLowerCase().includes(term)) ||
+                (item.tagb && item.tagb.toLowerCase().includes(term)) ||
                 (item.size && item.size.toLowerCase().includes(term))
             );
             renderCards(filtered);
