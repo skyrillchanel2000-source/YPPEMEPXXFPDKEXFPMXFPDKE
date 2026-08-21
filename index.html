@@ -49,6 +49,7 @@
             transition: transform 0.2s, box-shadow 0.2s;
             display: flex;
             flex-direction: column;
+            height: 100%; /* Чтобы карточки были одной высоты */
         }
 
         .card:hover {
@@ -57,7 +58,7 @@
         }
 
         .card-image {
-            height: 180px;
+            height: 200px;
             background-color: #e0e0e0;
             background-size: cover;
             background-position: center;
@@ -78,6 +79,7 @@
             color: #333;
             border-bottom: 2px solid #4285f4;
             padding-bottom: 10px;
+            min-height: 44px; /* Выравнивание заголовков */
         }
 
         .card-row {
@@ -120,21 +122,16 @@
 <body>
 
     <div id="search-container">
-        <input type="text" id="search-input" placeholder="Поиск по проекту, титулу или БЗ...">
+        <input type="text" id="search-input" placeholder="Поиск...">
     </div>
 
     <div id="cards-container">
-        <div class="no-data">Загрузка данных из таблицы...</div>
+        <div class="no-data">Загрузка данных...</div>
     </div>
 
     <script>
-        // ВНИМАНИЕ: Здесь исправлен ID на тот, что в вашей ссылке (2PACX...)
-        // Это ID публикации. Для работы через API (gviz) нам нужен ID самой таблицы.
-        // Обычно он выглядит короче. 
-        // НО: Ссылка вида /pub?output=csv часто указывает на то, что таблица опубликована в веб.
-        // Попробуем использовать прямой метод загрузки CSV, так как он надежнее для опубликованных таблиц.
-        
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pub?output=csv';
+        // ВСТАВЬТЕ СЮДА ССЫЛКУ, ПОЛУЧЕННУЮ ПРИ ОПУБЛИКОВАННОМ ЛИСТЕ "Классификация приточек"
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSV2vI-uLfWLk8C_Yr1zt5bT4jiFYyCfm4gQFBHrQSJMUNdrWYRNtRZOhy7-f9IgNC8tpKzekwBgF_S/pubhtml?gid=976824630&single=true';
 
         let allData = [];
 
@@ -145,25 +142,19 @@
                 if (!response.ok) throw new Error('Ошибка сети: ' + response.status);
                 const csvText = await response.text();
                 
-                // Простой парсер CSV (учитывает кавычки)
                 const rows = parseCSV(csvText);
                 
                 if (rows.length < 2) {
-                    throw new Error('Таблица пуста или содержит только заголовки');
+                    throw new Error('Таблица пуста');
                 }
 
                 const headers = rows[0];
                 const dataRows = rows.slice(1);
 
-                // Ищем индексы колонок
                 const idxProject = headers.indexOf('Проект');
                 const idxTitle = headers.indexOf('Титул');
                 const idxBZ = headers.indexOf('БЗ');
                 const idxImg = headers.indexOf('IMG');
-
-                if (idxProject === -1) {
-                    console.warn('Колонка "Проект" не найдена. Заголовки:', headers);
-                }
 
                 allData = dataRows.map(row => {
                     const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
@@ -186,13 +177,13 @@
                     <div class="error-msg">
                         <h3>Не удалось загрузить данные</h3>
                         <p>${error.message}</p>
-                        <p>Проверьте, что ссылка доступна из интернета (Файл -> Поделиться -> Все в интернете с ссылкой).</p>
+                        <p>1. Убедитесь, что лист "Классификация приточек" активен при публикации.<br>
+                        2. Проверьте доступ: Файл -> Поделиться -> Все в интернете с ссылкой.</p>
                     </div>
                 `;
             }
         }
 
-        // Функция парсинга CSV (обрабатывает кавычки и переносы строк)
         function parseCSV(text) {
             const result = [];
             let row = [];
@@ -250,8 +241,9 @@
                     imageHtml = `<div class="card-image" style="background-image: url('${item.image}')"></div>`;
                 }
 
+                // Заголовок карточки теперь БЗ
                 let contentHtml = `
-                    <div class="card-title">${item.project || 'Без названия'}</div>
+                    <div class="card-title">${item.bz || 'Без БЗ'}</div>
                     
                     <div class="card-row">
                         <span class="card-label">Проект:</span>
