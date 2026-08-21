@@ -108,7 +108,6 @@
             word-wrap: break-word;
         }
         
-        /* Модальное окно */
         .modal {
             display: none; 
             position: fixed; 
@@ -183,7 +182,6 @@
             padding: 40px;
         }
         
-        /* Индикатор PDF внутри карточки */
         .pdf-indicator {
             width: 100%;
             height: 100%;
@@ -218,6 +216,21 @@
 
         let allData = [];
 
+        // Функция исправления ссылок (GitHub и Google Drive)
+        function fixUrl(url) {
+            if (!url) return url;
+            
+            // GitHub: blob -> raw
+            if (url.includes('github.com') && url.includes('/blob/')) {
+                return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+            }
+            // Google Drive: view -> preview
+            if (url.includes('drive.google.com') && url.includes('/view')) {
+                return url.replace('/view', '/preview');
+            }
+            return url;
+        }
+
         async function fetchData() {
             const container = document.getElementById('cards-container');
             try {
@@ -241,14 +254,12 @@
                 allData = dataRows.map(row => {
                     const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
                     
-                    const imgUrl = getVal(idxImg);
+                    let imgUrl = getVal(idxImg);
                     let pdfUrl = getVal(idxLink);
 
-                    // АВТО-КОНВЕРТАЦИЯ ССЫЛОК GITHUB
-                    // Если ссылка вида github.com/.../blob/..., меняем на raw.githubusercontent.com
-                    if (pdfUrl && pdfUrl.includes('github.com') && pdfUrl.includes('/blob/')) {
-                        pdfUrl = pdfUrl.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
-                    }
+                    // Исправляем ссылки
+                    imgUrl = fixUrl(imgUrl);
+                    pdfUrl = fixUrl(pdfUrl);
 
                     let mediaType = 'none';
                     let mediaSrc = '';
@@ -381,22 +392,24 @@
         }
 
         function openModal(type, src) {
+            // Если PDF - пробуем открыть в iframe, но если не выйдет - новая вкладка
+            if (type === 'pdf') {
+                // Для надежности сразу открываем в новой вкладке, 
+                // так как браузеры часто блокируют PDF внутри iframe
+                window.open(src, '_blank');
+                return;
+            }
+
+            // Для картинок открываем модальное окно
             const modal = document.getElementById("mediaModal");
             const container = document.getElementById("modalContainer");
             modal.style.display = "block";
             container.innerHTML = '';
 
-            if (type === 'image') {
-                const img = document.createElement("img");
-                img.className = "modal-content";
-                img.src = src;
-                container.appendChild(img);
-            } else if (type === 'pdf') {
-                const iframe = document.createElement("iframe");
-                iframe.className = "modal-iframe";
-                iframe.src = src;
-                container.appendChild(iframe);
-            }
+            const img = document.createElement("img");
+            img.className = "modal-content";
+            img.src = src;
+            container.appendChild(img);
         }
 
         function closeModal() {
