@@ -59,21 +59,20 @@
             box-shadow: 0 8px 12px rgba(0,0,0,0.15);
         }
 
+        /* Блок картинки */
         .card-image {
             height: 180px;
             background-color: #e0e0e0;
             background-size: cover;
             background-position: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #757575;
-            font-size: 14px;
+            flex-shrink: 0; /* Чтобы картинка не сжималась */
         }
 
         .card-content {
             padding: 20px;
             flex-grow: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         .card-title {
@@ -124,15 +123,10 @@
     </div>
 
     <script>
-        // ID вашей таблицы
+        // ID вашей таблицы (извлечен из вашей ссылки)
         const SHEET_ID = '1eJMoytqFNn6G2QS3cEo2Of350lKF6x3gbEvbfMnkA'; 
-        // Примечание: Я использовал ID из вашего URL. Если данные не грузятся, 
-        // возможно, таблица требует доступа. Убедитесь, что доступ "Все в интернете с ссылкой" установлен.
-        
-        // Имя листа
         const SHEET_NAME = 'Классификация приточек';
 
-        // Формируем запрос к Google Visualization API
         const query = encodeURIComponent('select *');
         const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${query}&sheet=${SHEET_NAME}`;
 
@@ -143,32 +137,33 @@
                 const response = await fetch(url);
                 const text = await response.text();
                 
-                // Google возвращает данные в формате JSONP, нужно очистить от обертки
                 const jsonString = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\w]+)\);/)[1];
                 const data = JSON.parse(jsonString);
                 
                 const table = data.table;
-                const cols = table.cols.map(c => c.label); // Заголовки колонок
+                const cols = table.cols.map(c => c.label); 
                 const rows = table.rows;
 
-                // Находим индексы нужных колонок
+                // Ищем индексы колонок
                 const idxProject = cols.indexOf('Проект');
                 const idxTitle = cols.indexOf('Титул');
                 const idxBZ = cols.indexOf('БЗ');
-                const idxImage = cols.indexOf('Изображение'); // Предполагаем, что есть колонка с ссылкой на картинку
+                const idxImg = cols.indexOf('IMG'); // Ищем колонку IMG
 
                 allData = rows.map(row => {
                     const cellValue = (c) => c ? (c.v !== null ? c.v : '') : '';
                     
-                    // Формируем объект для карточки
                     return {
                         project: cellValue(row.c[idxProject]),
                         title: cellValue(row.c[idxTitle]),
                         bz: cellValue(row.c[idxBZ]),
-                        image: idxImage !== -1 ? cellValue(row.c[idxImage]) : null,
-                        fullRow: row.c // Сохраняем всю строку на случай, если нужно показать всё
+                        // Проверяем, есть ли ссылка на картинку
+                        image: (idxImg !== -1 && cellValue(row.c[idxImg]).startsWith('http')) 
+                               ? cellValue(row.c[idxImg]) 
+                               : null,
+                        fullRow: row.c 
                     };
-                }).filter(item => item.project || item.title || item.bz); // Убираем пустые строки
+                }).filter(item => item.project || item.title || item.bz);
 
                 renderCards(allData);
 
@@ -192,17 +187,13 @@
                 const card = document.createElement('div');
                 card.className = 'card';
 
-                // Картинка
-                let imageHtml = '<div class="card-image">Нет изображения</div>';
-                if (item.image && item.image.startsWith('http')) {
+                // Логика картинки: создаем блок только если есть ссылка
+                let imageHtml = '';
+                if (item.image) {
                     imageHtml = `<div class="card-image" style="background-image: url('${item.image}')"></div>`;
                 }
+                // Если item.image нет, переменная imageHtml остается пустой, и блок не рендерится
 
-                // Формирование содержимого карточки
-                // Берем первые 3 параметра как просили: Проект, Титул, БЗ
-                // Но также можно добавить остальные колонки динамически, если нужно.
-                // Сейчас сделаем строго по ТЗ: 3 блока.
-                
                 let contentHtml = `
                     <div class="card-title">${item.project || 'Без названия'}</div>
                     
@@ -220,22 +211,6 @@
                     </div>
                 `;
 
-                // Если нужно вывести ВСЕ остальные колонки таблицы, можно раскомментировать этот блок:
-                /*
-                item.fullRow.forEach((cell, index) => {
-                    const val = cell ? (cell.v !== null ? cell.v : '') : '';
-                    const label = cols[index];
-                    if (val && !['Проект', 'Титул', 'БЗ', 'Изображение'].includes(label)) {
-                         contentHtml += `
-                            <div class="card-row">
-                                <span class="card-label">${label}:</span>
-                                <span class="card-value">${val}</span>
-                            </div>
-                        `;
-                    }
-                });
-                */
-
                 card.innerHTML = imageHtml + `<div class="card-content">${contentHtml}</div>`;
                 container.appendChild(card);
             });
@@ -252,7 +227,6 @@
             renderCards(filtered);
         });
 
-        // Запуск
         fetchData();
     </script>
 </body>
