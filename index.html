@@ -90,10 +90,8 @@
             background-color: white;
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
             padding: 20px;
-            padding-bottom: 80px;
             overflow-y: auto;
             z-index: 999;
-            box-sizing: border-box;
         }
 
         #advanced-panel.visible {
@@ -160,10 +158,6 @@
             margin-bottom: 20px;
         }
 
-        .filter-group:last-child {
-            margin-bottom: 40px;
-        }
-
         .filter-group label {
             display: block;
             font-weight: 600;
@@ -181,7 +175,6 @@
             outline: none;
             transition: border-color 0.3s;
             background-color: white;
-            box-sizing: border-box;
         }
 
         .filter-group select:focus {
@@ -1058,3 +1051,46 @@
             startX = e.clientX - imgLeft;
             startY = e.clientY - imgTop;
             wrapper.style.cursor = 'grabbing';
+            lens.style.display = "none";
+        });
+
+        window.addEventListener('mouseup', function() {
+            panning = false;
+            wrapper.style.cursor = 'grab';
+        });
+
+        window.addEventListener('mousemove', function(e) {
+            if (!panning) return;
+            e.preventDefault();
+            imgLeft = e.clientX - startX;
+            imgTop = e.clientY - startY;
+            updateTransform();
+        });
+
+        wrapper.addEventListener('touchstart', function(e) {
+            panning = true;
+            startX = e.touches[0].clientX - imgLeft;
+            startY = e.touches[0].clientY - imgTop;
+            lens.style.display = "none";
+        }, {passive: false});
+
+        window.addEventListener('touchend', function() {
+            panning = false;
+        });
+
+        window.addEventListener('touchmove', function(e) {
+            if (!panning) return;
+            e.preventDefault();
+            imgLeft = e.touches[0].clientX - startX;
+            imgTop = e.touches[0].clientY - startY;
+            updateTransform();
+        }, {passive: false});
+
+        document.getElementById('search-input').addEventListener('input', () => {
+            applyFilters();
+        });
+
+        fetchData();
+    </script>
+</body>
+</html>
