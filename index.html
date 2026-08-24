@@ -90,8 +90,10 @@
             background-color: white;
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
             padding: 20px;
+            padding-bottom: 50px;
             overflow-y: auto;
             z-index: 999;
+            box-sizing: border-box;
         }
 
         #advanced-panel.visible {
@@ -152,6 +154,10 @@
 
         .close-panel-btn:hover {
             color: #d32f2f;
+        }
+
+        #filters-container {
+            padding-bottom: 20px;
         }
 
         .filter-group {
@@ -521,7 +527,31 @@
 
         function parseDate(dateStr) {
             if (!dateStr) return null;
-            const date = new Date(dateStr);
+            
+            const trimmed = dateStr.trim();
+            
+            // Format "DD.MM.YYYY" (e.g. "31.07.2026")
+            const dotParts = trimmed.split('.');
+            if (dotParts.length === 3) {
+                const day = parseInt(dotParts[0], 10);
+                const month = parseInt(dotParts[1], 10) - 1;
+                const year = parseInt(dotParts[2], 10);
+                const date = new Date(year, month, day);
+                if (!isNaN(date.getTime())) return date;
+            }
+            
+            // Format "DD/MM/YYYY" (e.g. "31/07/2026")
+            const slashParts = trimmed.split('/');
+            if (slashParts.length === 3) {
+                const day = parseInt(slashParts[0], 10);
+                const month = parseInt(slashParts[1], 10) - 1;
+                const year = parseInt(slashParts[2], 10);
+                const date = new Date(year, month, day);
+                if (!isNaN(date.getTime())) return date;
+            }
+            
+            // Fallback to standard Date parsing
+            const date = new Date(trimmed);
             return isNaN(date.getTime()) ? null : date;
         }
 
