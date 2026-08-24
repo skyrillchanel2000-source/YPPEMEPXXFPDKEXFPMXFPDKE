@@ -132,6 +132,11 @@
             border-color: #4285f4;
         }
 
+        .filter-group select.has-value {
+            border-color: #4285f4;
+            background-color: #e8f0fe;
+        }
+
         .reset-filters-btn {
             width: 100%;
             padding: 10px;
@@ -383,6 +388,12 @@
             background-color: #e0e0e0;
             margin: 20px 0;
         }
+
+        .filter-count {
+            font-size: 11px;
+            color: #999;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -433,7 +444,6 @@
 
         let allData = [];
         let filteredData = [];
-        let activeFilters = {};
         
         let scale = 1;
         let panning = false;
@@ -577,10 +587,11 @@
                     };
                 }).filter(item => item.project || item.title || item.bz || item.taga || item.tagb);
 
-                sortData(allData, 'newest');
-                filteredData = allData;
+                filteredData = [...allData];
+                sortData(filteredData, 'newest');
                 buildFilterPanel();
-                renderCards(filteredData);
+                updateAllFilterOptions();
+                applyFilters();
 
             } catch (error) {
                 console.error('Ошибка:', error);
@@ -654,8 +665,7 @@
             const container = document.getElementById('filters-container');
             container.innerHTML = '';
 
-            filterFields.forEach((field, index) => {
-                // Add divider after basic fields
+            filterFields.forEach((field) => {
                 if (field.key === 'tagb') {
                     const divider = document.createElement('div');
                     divider.className = 'filter-divider';
@@ -666,13 +676,13 @@
                 group.className = 'filter-group';
                 
                 const label = document.createElement('label');
-                label.textContent = field.label;
+                label.innerHTML = field.label;
                 
                 const select = document.createElement('select');
                 select.id = `filter-${field.key}`;
                 
                 if (field.key === 'date') {
-                    select.innerHTML = '<option value="">По умолчанию (новые сверху)</option>';
+                    select.innerHTML = '<option value="">По умолчанию</option>';
                     const newestOpt = document.createElement('option');
                     newestOpt.value = 'newest';
                     newestOpt.textContent = 'Сначала новые';
@@ -682,14 +692,7 @@
                     select.appendChild(newestOpt);
                     select.appendChild(oldestOpt);
                 } else {
-                    const uniqueValues = [...new Set(allData.map(item => item[field.key]).filter(val => val))].sort();
                     select.innerHTML = '<option value="">Все</option>';
-                    uniqueValues.forEach(val => {
-                        const option = document.createElement('option');
-                        option.value = val;
-                        option.textContent = val;
-                        select.appendChild(option);
-                    });
                 }
                 
                 select.addEventListener('change', applyFilters);
@@ -700,44 +703,124 @@
             });
         }
 
-        function applyFilters() {
-            activeFilters = {};
-            let sortOrder = 'newest';
-            
+        function getActiveFilters() {
+            const filters = {};
             filterFields.forEach(field => {
+                if (field.key === 'date') return;
                 const select = document.getElementById(`filter-${field.key}`);
                 if (select && select.value) {
-                    if (field.key === 'date') {
-                        sortOrder = select.value;
-                    } else {
-                        activeFilters[field.key] = select.value;
-                    }
+                    filters[field.key] = select.value;
                 }
             });
-            
-            filteredData = allData.filter(item => {
-                const searchInput = document.getElementById('search-input').value.toLowerCase();
-                
-                const matchesSearch = !searchInput || 
-                    (item.project && item.project.toLowerCase().includes(searchInput)) ||
-                    (item.title && item.title.toLowerCase().includes(searchInput)) ||
-                    (item.bz && item.bz.toLowerCase().includes(searchInput)) ||
-                    (item.taga && item.taga.toLowerCase().includes(searchInput)) ||
-                    (item.tagb && item.tagb.toLowerCase().includes(searchInput)) ||
-                    (item.size && item.size.toLowerCase().includes(searchInput));
-                
-                if (!matchesSearch) return false;
-                
-                for (const key in activeFilters) {
-                    if (item[key] !== activeFilters[key]) {
-                        return false;
-                    }
+            return filters;
+        }
+
+        function getSearchTerm() {
+            return document.getElementById('search-input').value.toLowerCase();
+        }
+
+        function getSortOrder() {
+            const dateSelect = document.getElementById('filter-date');
+            return (dateSelect && dateSelect.value) ? dateSelect.value : 'newest';
+        }
+
+        function getFilteredDataset(excludeKey = null) {
+            const filters = getActiveFilters();
+            const searchInput = getSearchTerm();
+
+            return allData.filter(item => {
+                // Search term filter
+                if (searchInput) {
+                    const matchesSearch =
+                        (item.project && item.project.toLowerCase().includes(searchInput)) ||
+                        (item.title && item.title.toLowerCase().includes(searchInput)) ||
+                        (item.bz && item.bz.toLowerCase().includes(searchInput)) ||
+                        (item.taga && item.taga.toLowerCase().includes(searchInput)) ||
+                        (item.tagb && item.tagb.toLowerCase().includes(searchInput)) ||
+                        (item.size && item.size.toLowerCase().includes(searchInput));
+                    if (!matchesSearch) return false;
                 }
-                
+
+                // Dropdown filters (except the excluded one)
+                for (const key in filters) {
+                    if (key === excludeKey) continue;
+                    if (item[key] !== filters[key]) return false;
+                }
+
                 return true;
             });
+        }
+
+        function updateFilterOptions(field, dataset) {
+            const select = document.getElementById(`filter-${field.key}`);
+            if (!select || field.key === 'date') return;
+
+            const currentValue = select.value;
+            const uniqueValues = [...new Set(dataset.map(item => item[field.key]).filter(val => val))].sort();
+
+            // Save scroll position
+            select.innerHTML = '<option value="">Все</option>';
             
+            uniqueValues.forEach(val => {
+                const option = document.createElement('option');
+                option.value = val;
+                option.textContent = val;
+                select.appendChild(option);
+            });
+
+            // Restore value if it still exists
+            if (currentValue && uniqueValues.includes(currentValue)) {
+                select.value = currentValue;
+            } else if (currentValue) {
+                // Value no longer available - reset
+                select.value = '';
+            }
+
+            // Visual indication of active filter
+            if (select.value) {
+                select.classList.add('has-value');
+            } else {
+                select.classList.remove('has-value');
+            }
+        }
+
+        function updateAllFilterOptions() {
+            filterFields.forEach(field => {
+                if (field.key === 'date') return;
+                const dataset = getFilteredDataset(field.key);
+                updateFilterOptions(field, dataset);
+            });
+        }
+
+        function applyFilters() {
+            const searchInput = getSearchTerm();
+            const sortOrder = getSortOrder();
+            const filters = getActiveFilters();
+
+            filteredData = allData.filter(item => {
+                if (searchInput) {
+                    const matchesSearch =
+                        (item.project && item.project.toLowerCase().includes(searchInput)) ||
+                        (item.title && item.title.toLowerCase().includes(searchInput)) ||
+                        (item.bz && item.bz.toLowerCase().includes(searchInput)) ||
+                        (item.taga && item.taga.toLowerCase().includes(searchInput)) ||
+                        (item.tagb && item.tagb.toLowerCase().includes(searchInput)) ||
+                        (item.size && item.size.toLowerCase().includes(searchInput));
+                    if (!matchesSearch) return false;
+                }
+
+                for (const key in filters) {
+                    if (item[key] !== filters[key]) return false;
+                }
+
+                return true;
+            });
+
             sortData(filteredData, sortOrder);
+            
+            // Update cascade - recalculate available options
+            updateAllFilterOptions();
+            
             renderCards(filteredData);
         }
 
@@ -746,6 +829,7 @@
                 const select = document.getElementById(`filter-${field.key}`);
                 if (select) {
                     select.value = '';
+                    select.classList.remove('has-value');
                 }
             });
             document.getElementById('search-input').value = '';
