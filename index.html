@@ -33,8 +33,15 @@
             border-color: #4285f4;
         }
 
-        .advanced-search-btn {
+        .search-buttons {
             margin-top: 10px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .advanced-search-btn {
             padding: 10px 20px;
             background-color: #4285f4;
             color: white;
@@ -51,6 +58,26 @@
 
         .advanced-search-btn.active {
             background-color: #357ae8;
+        }
+
+        .main-reset-btn {
+            padding: 10px 20px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s, opacity 0.3s;
+            display: none;
+        }
+
+        .main-reset-btn:hover {
+            background-color: #d32f2f;
+        }
+
+        .main-reset-btn.visible {
+            display: inline-block;
         }
 
         #advanced-panel {
@@ -84,6 +111,28 @@
             margin: 0;
             color: #333;
             font-size: 18px;
+        }
+
+        .panel-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .panel-reset-btn {
+            background: none;
+            border: 1px solid #f44336;
+            color: #f44336;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .panel-reset-btn:hover {
+            background-color: #f44336;
+            color: white;
         }
 
         .close-panel-btn {
@@ -135,23 +184,6 @@
         .filter-group select.has-value {
             border-color: #4285f4;
             background-color: #e8f0fe;
-        }
-
-        .reset-filters-btn {
-            width: 100%;
-            padding: 10px;
-            background-color: #f44336;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-top: 10px;
-            transition: background-color 0.3s;
-        }
-
-        .reset-filters-btn:hover {
-            background-color: #d32f2f;
         }
 
         #cards-container {
@@ -388,28 +420,27 @@
             background-color: #e0e0e0;
             margin: 20px 0;
         }
-
-        .filter-count {
-            font-size: 11px;
-            color: #999;
-            margin-left: 5px;
-        }
     </style>
 </head>
 <body>
 
     <div id="search-container">
         <input type="text" id="search-input" placeholder="Поиск...">
-        <button class="advanced-search-btn" onclick="toggleAdvancedSearch()">Расширенный поиск</button>
+        <div class="search-buttons">
+            <button class="advanced-search-btn" onclick="toggleAdvancedSearch()">Расширенный поиск</button>
+            <button class="main-reset-btn" id="main-reset-btn" onclick="resetFilters()">✕ Сбросить фильтры</button>
+        </div>
     </div>
 
     <div id="advanced-panel">
         <div class="panel-header">
             <h3>Фильтры</h3>
-            <button class="close-panel-btn" onclick="toggleAdvancedSearch()">&times;</button>
+            <div class="panel-header-actions">
+                <button class="panel-reset-btn" onclick="resetFilters()">Сброс</button>
+                <button class="close-panel-btn" onclick="toggleAdvancedSearch()">&times;</button>
+            </div>
         </div>
         <div id="filters-container"></div>
-        <button class="reset-filters-btn" onclick="resetFilters()">Сбросить все фильтры</button>
     </div>
 
     <div id="cards-container">
@@ -724,12 +755,28 @@
             return (dateSelect && dateSelect.value) ? dateSelect.value : 'newest';
         }
 
+        function hasActiveFilters() {
+            const filters = getActiveFilters();
+            const hasSearch = document.getElementById('search-input').value.trim() !== '';
+            const dateSelect = document.getElementById('filter-date');
+            const hasDateFilter = dateSelect && dateSelect.value !== '';
+            return Object.keys(filters).length > 0 || hasSearch || hasDateFilter;
+        }
+
+        function updateResetButtonVisibility() {
+            const mainResetBtn = document.getElementById('main-reset-btn');
+            if (hasActiveFilters()) {
+                mainResetBtn.classList.add('visible');
+            } else {
+                mainResetBtn.classList.remove('visible');
+            }
+        }
+
         function getFilteredDataset(excludeKey = null) {
             const filters = getActiveFilters();
             const searchInput = getSearchTerm();
 
             return allData.filter(item => {
-                // Search term filter
                 if (searchInput) {
                     const matchesSearch =
                         (item.project && item.project.toLowerCase().includes(searchInput)) ||
@@ -741,7 +788,6 @@
                     if (!matchesSearch) return false;
                 }
 
-                // Dropdown filters (except the excluded one)
                 for (const key in filters) {
                     if (key === excludeKey) continue;
                     if (item[key] !== filters[key]) return false;
@@ -758,7 +804,6 @@
             const currentValue = select.value;
             const uniqueValues = [...new Set(dataset.map(item => item[field.key]).filter(val => val))].sort();
 
-            // Save scroll position
             select.innerHTML = '<option value="">Все</option>';
             
             uniqueValues.forEach(val => {
@@ -768,15 +813,12 @@
                 select.appendChild(option);
             });
 
-            // Restore value if it still exists
             if (currentValue && uniqueValues.includes(currentValue)) {
                 select.value = currentValue;
             } else if (currentValue) {
-                // Value no longer available - reset
                 select.value = '';
             }
 
-            // Visual indication of active filter
             if (select.value) {
                 select.classList.add('has-value');
             } else {
@@ -817,10 +859,8 @@
             });
 
             sortData(filteredData, sortOrder);
-            
-            // Update cascade - recalculate available options
             updateAllFilterOptions();
-            
+            updateResetButtonVisibility();
             renderCards(filteredData);
         }
 
