@@ -460,6 +460,30 @@
             background-color: #e0e0e0;
             margin: 20px 0;
         }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(3px);
+        }
+
+        .loading-box {
+            background: white;
+            padding: 20px 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -560,23 +584,72 @@
         function extractGoogleDriveId(url) {
             if (!url) return null;
             
-            // Формат: /file/d/FILE_ID/view или /file/d/FILE_ID/preview
             let match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
             if (match) return match[1];
             
-            // Формат: ?id=FILE_ID или &id=FILE_ID
             match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
             if (match) return match[1];
             
-            // Формат: /d/FILE_ID (например в lh3.googleusercontent.com/d/ID)
             match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
             if (match) return match[1];
             
-            // Формат: /open?id=FILE_ID
             match = url.match(/\/open\?id=([a-zA-Z0-9_-]+)/);
             if (match) return match[1];
             
             return null;
+        }
+
+        function isYandexDiskUrl(url) {
+            if (!url) return false;
+            return url.includes('disk.yandex.ru') || 
+                   url.includes('disk.yandex.com') ||
+                   url.includes('yadi.sk') ||
+                   url.includes('cloud-api.yandex.net');
+        }
+
+        // Асинхронное разрешение ссылок Яндекс Диска через публичный API
+        async function resolveYandexUrl(url) {
+            if (!url || !isYandexDiskUrl(url)) return url;
+            
+            try {
+                // 1. Пробуем получить превью (для картинок — самый быстрый способ)
+                const previewApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(url)}&preview_size=1600x1600`;
+                const previewResponse = await fetch(previewApiUrl);
+                
+                if (previewResponse.ok) {
+                    const previewData = await previewResponse.json();
+                    
+                    // Если получили превью — возвращаем его (идеально для картинок)
+                    if (previewData.preview) {
+                        return previewData.preview;
+                    }
+                    
+                    // Если файл не картинка, но получили MIME-тип — проверяем
+                    if (previewData.mime_type && previewData.mime_type.startsWith('image/')) {
+                        // Попробуем без preview_size
+                        const directApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(url)}`;
+                        const directResponse = await fetch(directApiUrl);
+                        if (directResponse.ok) {
+                            const directData = await directResponse.json();
+                            if (directData.file) return directData.file;
+                        }
+                    }
+                }
+                
+                // 2. Если превью не получили — пробуем прямую ссылку на скачивание
+                const downloadApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(url)}`;
+                const downloadResponse = await fetch(downloadApiUrl);
+                
+                if (downloadResponse.ok) {
+                    const downloadData = await downloadResponse.json();
+                    if (downloadData.href) return downloadData.href;
+                }
+            } catch (e) {
+                console.warn('Не удалось разрешить ссылку Яндекс Диска:', url, e);
+            }
+            
+            // Если ничего не сработало — возвращаем оригинал
+            return url;
         }
 
         function fixUrl(url, type) {
@@ -587,22 +660,86 @@
                 return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
             }
             
-            // Google Drive
+            // Google Drive (обрабатывается синхронно, без API)
             if (url.includes('drive.google.com') || url.includes('docs.google.com') || url.includes('googleusercontent.com')) {
                 const fileId = extractGoogleDriveId(url);
                 
                 if (fileId) {
                     if (type === 'image') {
-                        // Для изображений используем lh3.googleusercontent.com - самый надёжный способ
                         return `https://lh3.googleusercontent.com/d/${fileId}`;
                     } else {
-                        // Для PDF используем preview для встраивания в iframe
                         return `https://drive.google.com/file/d/${fileId}/preview`;
                     }
                 }
             }
             
+            // Яндекс Диск — возвращаем как есть, разрешаем асинхронно в resolveAllYandexUrls
+            // Здесь просто детектируем и оставляем оригинал
+            if (isYandexDiskUrl(url)) {
+                return url;
+            }
+            
             return url;
+        }
+
+        // Проходит по всем данным и асинхронно разрешает ссылки Яндекс Диска
+        async function resolveAllYandexUrls() {
+            const yandexItems = allData.filter(item => 
+                (item.mediaSrc && isYandexDiskUrl(item.mediaSrc)) ||
+                (item.rawImgUrl && isYandexDiskUrl(item.rawImgUrl)) ||
+                (item.rawPdfUrl && isYandexDiskUrl(item.rawPdfUrl))
+            );
+
+            if (yandexItems.length === 0) return;
+
+            // Показываем индикатор загрузки
+            const overlay = document.createElement('div');
+            overlay.className = 'loading-overlay';
+            overlay.id = 'yandex-loading';
+            overlay.innerHTML = `<div class="loading-box">Загрузка ссылок Яндекс Диска (0/${yandexItems.length})...</div>`;
+            document.body.appendChild(overlay);
+
+            let resolved = 0;
+            const loadingBox = overlay.querySelector('.loading-box');
+
+            // Обрабатываем по 3 ссылки одновременно, чтобы не перегружать API
+            const batchSize = 3;
+            for (let i = 0; i < yandexItems.length; i += batchSize) {
+                const batch = yandexItems.slice(i, i + batchSize);
+                const promises = batch.map(async (item) => {
+                    try {
+                        // Разрешаем IMG-ссылку если она с Яндекс Диска
+                        if (item.rawImgUrl && isYandexDiskUrl(item.rawImgUrl)) {
+                            const resolvedUrl = await resolveYandexUrl(item.rawImgUrl);
+                            if (resolvedUrl !== item.rawImgUrl) {
+                                item.mediaType = 'image';
+                                item.mediaSrc = resolvedUrl;
+                            }
+                        }
+                        // Разрешаем PDF-ссылку если она с Яндекс Диска
+                        if (item.rawPdfUrl && isYandexDiskUrl(item.rawPdfUrl)) {
+                            const resolvedUrl = await resolveYandexUrl(item.rawPdfUrl);
+                            if (resolvedUrl !== item.rawPdfUrl && (!item.mediaSrc || !item.mediaSrc.startsWith('http'))) {
+                                item.mediaType = 'pdf';
+                                item.mediaSrc = resolvedUrl;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Ошибка разрешения для', item.bz, e);
+                    }
+                    
+                    resolved++;
+                    loadingBox.textContent = `Загрузка ссылок Яндекс Диска (${resolved}/${yandexItems.length})...`;
+                });
+                
+                await Promise.all(promises);
+            }
+
+            // Убираем индикатор
+            overlay.remove();
+
+            // Перерисовываем с разрешёнными ссылками
+            applyFilters();
         }
 
         function parseDate(dateStr) {
@@ -674,12 +811,12 @@
                 allData = dataRows.map(row => {
                     const getVal = (idx) => (idx !== -1 && row[idx] !== undefined) ? row[idx] : '';
                     
-                    let imgUrl = getVal(idxImg);
-                    let pdfUrl = getVal(idxLink);
+                    const rawImgUrl = getVal(idxImg);
+                    const rawPdfUrl = getVal(idxLink);
 
-                    // Передаём тип контента для корректного преобразования ссылок Google Drive
-                    imgUrl = fixUrl(imgUrl, 'image');
-                    pdfUrl = fixUrl(pdfUrl, 'pdf');
+                    // Сохраняем оригинальные URL для возможного асинхронного разрешения (Яндекс Диск)
+                    let imgUrl = fixUrl(rawImgUrl, 'image');
+                    let pdfUrl = fixUrl(rawPdfUrl, 'pdf');
 
                     let mediaType = 'none';
                     let mediaSrc = '';
@@ -721,6 +858,9 @@
                         date: dateStr,
                         parsedDate: parsedDate,
                         
+                        rawImgUrl: rawImgUrl,
+                        rawPdfUrl: rawPdfUrl,
+                        
                         mediaType: mediaType,
                         mediaSrc: mediaSrc
                     };
@@ -731,6 +871,9 @@
                 buildFilterPanel();
                 updateAllFilterOptions();
                 applyFilters();
+
+                // Асинхронно разрешаем ссылки Яндекс Диска после первого рендера
+                resolveAllYandexUrls();
 
             } catch (error) {
                 console.error('Ошибка:', error);
