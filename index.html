@@ -484,6 +484,18 @@
             font-weight: 600;
             color: #333;
         }
+
+        .folder-loading-indicator {
+            height: 200px;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #4285f4;
+        }
+        .folder-icon { font-size: 40px; margin-bottom: 10px; }
+        .folder-text { font-weight: bold; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -556,6 +568,9 @@
         let imgTop = 0, imgLeft = 0;
         let lensEnabled = true;
 
+        // Кэш для списков файлов папок Яндекс Диска
+        const yandexFolderCache = {};
+
         const filterFields = [
             { key: 'project', label: 'Проект' },
             { key: 'title', label: 'Титул' },
@@ -581,155 +596,133 @@
             { key: 'date', label: 'Дата' }
         ];
 
-        function extractGoogleDriveId(url) {
-            if (!url) return null;
+        // Универсальная функция обработки URL (только GitHub)
+        function fixUrl(url) {
+            if (!url) return url;
             
-            let match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-            if (match) return match[1];
+            // GitHub: преобразуем blob в raw для прямого доступа
+            if (url.includes('github.com') && url.includes('/blob/')) {
+                return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+            }
             
-            match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-            if (match) return match[1];
-            
-            match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-            if (match) return match[1];
-            
-            match = url.match(/\/open\?id=([a-zA-Z0-9_-]+)/);
-            if (match) return match[1];
-            
-            return null;
+            return url;
         }
 
-        function isYandexDiskUrl(url) {
+        // Проверяет, является ли URL ссылкой на папку Яндекс Диска
+        function isYandexFolder(url) {
             if (!url) return false;
-            return url.includes('disk.yandex.ru') || 
-                   url.includes('disk.yandex.com') ||
-                   url.includes('yadi.sk') ||
-                   url.includes('cloud-api.yandex.net');
+            // Папки Яндекс Диска имеют вид https://disk.yandex.ru/d/XXXXX
+            // или https://disk.yandex.com/d/XXXXX
+            return (url.includes('disk.yandex.ru/d/') || 
+                    url.includes('disk.yandex.com/d/') ||
+                    url.includes('yadi.sk/d/')) && 
+                   !url.includes('/client/');
         }
 
-        // Асинхронное разрешение ссылок Яндекс Диска через публичный API
-        async function resolveYandexUrl(url) {
-            if (!url || !isYandexDiskUrl(url)) return url;
+        // Получает список файлов из публичной папки Яндекс Диска (с кэшем)
+        async function getYandexFolderFiles(folderUrl) {
+            if (yandexFolderCache[folderUrl]) {
+                return yandexFolderCache[folderUrl];
+            }
             
             try {
-                // 1. Пробуем получить превью (для картинок — самый быстрый способ)
-                const previewApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(url)}&preview_size=1600x1600`;
-                const previewResponse = await fetch(previewApiUrl);
+                const apiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(folderUrl)}`;
+                const response = await fetch(apiUrl);
+                
+                if (!response.ok) {
+                    console.warn('Не удалось получить список файлов папки:', folderUrl);
+                    yandexFolderCache[folderUrl] = [];
+                    return [];
+                }
+                
+                const data = await response.json();
+                const files = data._embedded?.items || [];
+                yandexFolderCache[folderUrl] = files;
+                return files;
+            } catch (e) {
+                console.warn('Ошибка получения списка файлов:', e);
+                yandexFolderCache[folderUrl] = [];
+                return [];
+            }
+        }
+
+        // Находит файл в папке по номеру БЗ и возвращает ссылку на его превью
+        async function resolveYandexFolderImage(folderUrl, bzNumber) {
+            if (!bzNumber) return null;
+            
+            const files = await getYandexFolderFiles(folderUrl);
+            if (files.length === 0) return null;
+            
+            // Ищем файл, имя которого содержит номер БЗ
+            const match = files.find(f => f.name && f.name.includes(bzNumber));
+            if (!match) return null;
+            
+            // Пробуем получить превью (быстрее и меньше нагрузка)
+            try {
+                const previewUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(match.public_key)}&preview_size=1600x1600`;
+                const previewResponse = await fetch(previewUrl);
                 
                 if (previewResponse.ok) {
                     const previewData = await previewResponse.json();
-                    
-                    // Если получили превью — возвращаем его (идеально для картинок)
                     if (previewData.preview) {
                         return previewData.preview;
                     }
-                    
-                    // Если файл не картинка, но получили MIME-тип — проверяем
-                    if (previewData.mime_type && previewData.mime_type.startsWith('image/')) {
-                        // Попробуем без preview_size
-                        const directApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(url)}`;
-                        const directResponse = await fetch(directApiUrl);
-                        if (directResponse.ok) {
-                            const directData = await directResponse.json();
-                            if (directData.file) return directData.file;
-                        }
-                    }
                 }
-                
-                // 2. Если превью не получили — пробуем прямую ссылку на скачивание
-                const downloadApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(url)}`;
-                const downloadResponse = await fetch(downloadApiUrl);
+            } catch (e) {
+                console.warn('Не удалось получить превью для', match.name, e);
+            }
+            
+            // Fallback: получаем временную прямую ссылку на скачивание
+            try {
+                const downloadUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(match.public_key)}`;
+                const downloadResponse = await fetch(downloadUrl);
                 
                 if (downloadResponse.ok) {
                     const downloadData = await downloadResponse.json();
                     if (downloadData.href) return downloadData.href;
                 }
-            } catch (e) {
-                console.warn('Не удалось разрешить ссылку Яндекс Диска:', url, e);
-            }
+            } catch (e) {}
             
-            // Если ничего не сработало — возвращаем оригинал
-            return url;
+            // Последний fallback: публичная ссылка
+            return `https://disk.yandex.ru/i/${match.public_key}`;
         }
 
-        function fixUrl(url, type) {
-            if (!url) return url;
-            
-            // GitHub raw
-            if (url.includes('github.com') && url.includes('/blob/')) {
-                return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
-            }
-            
-            // Google Drive (обрабатывается синхронно, без API)
-            if (url.includes('drive.google.com') || url.includes('docs.google.com') || url.includes('googleusercontent.com')) {
-                const fileId = extractGoogleDriveId(url);
-                
-                if (fileId) {
-                    if (type === 'image') {
-                        return `https://lh3.googleusercontent.com/d/${fileId}`;
-                    } else {
-                        return `https://drive.google.com/file/d/${fileId}/preview`;
-                    }
-                }
-            }
-            
-            // Яндекс Диск — возвращаем как есть, разрешаем асинхронно в resolveAllYandexUrls
-            // Здесь просто детектируем и оставляем оригинал
-            if (isYandexDiskUrl(url)) {
-                return url;
-            }
-            
-            return url;
-        }
-
-        // Проходит по всем данным и асинхронно разрешает ссылки Яндекс Диска
-        async function resolveAllYandexUrls() {
-            const yandexItems = allData.filter(item => 
-                (item.mediaSrc && isYandexDiskUrl(item.mediaSrc)) ||
-                (item.rawImgUrl && isYandexDiskUrl(item.rawImgUrl)) ||
-                (item.rawPdfUrl && isYandexDiskUrl(item.rawPdfUrl))
+        // Асинхронно разрешает папки Яндекс Диска для всех элементов данных
+        async function resolveYandexFolders() {
+            // Находим элементы с папками Яндекс Диска
+            const folderItems = allData.filter(item => 
+                item.rawImgUrl && isYandexFolder(item.rawImgUrl) && item.bz
             );
 
-            if (yandexItems.length === 0) return;
+            if (folderItems.length === 0) return;
 
             // Показываем индикатор загрузки
             const overlay = document.createElement('div');
             overlay.className = 'loading-overlay';
-            overlay.id = 'yandex-loading';
-            overlay.innerHTML = `<div class="loading-box">Загрузка ссылок Яндекс Диска (0/${yandexItems.length})...</div>`;
+            overlay.id = 'folder-loading';
+            overlay.innerHTML = `<div class="loading-box">Загрузка из папок Яндекс Диска (0/${folderItems.length})...</div>`;
             document.body.appendChild(overlay);
 
             let resolved = 0;
             const loadingBox = overlay.querySelector('.loading-box');
 
-            // Обрабатываем по 3 ссылки одновременно, чтобы не перегружать API
+            // Обрабатываем батчами по 3, чтобы не перегружать API
             const batchSize = 3;
-            for (let i = 0; i < yandexItems.length; i += batchSize) {
-                const batch = yandexItems.slice(i, i + batchSize);
+            for (let i = 0; i < folderItems.length; i += batchSize) {
+                const batch = folderItems.slice(i, i + batchSize);
                 const promises = batch.map(async (item) => {
                     try {
-                        // Разрешаем IMG-ссылку если она с Яндекс Диска
-                        if (item.rawImgUrl && isYandexDiskUrl(item.rawImgUrl)) {
-                            const resolvedUrl = await resolveYandexUrl(item.rawImgUrl);
-                            if (resolvedUrl !== item.rawImgUrl) {
-                                item.mediaType = 'image';
-                                item.mediaSrc = resolvedUrl;
-                            }
-                        }
-                        // Разрешаем PDF-ссылку если она с Яндекс Диска
-                        if (item.rawPdfUrl && isYandexDiskUrl(item.rawPdfUrl)) {
-                            const resolvedUrl = await resolveYandexUrl(item.rawPdfUrl);
-                            if (resolvedUrl !== item.rawPdfUrl && (!item.mediaSrc || !item.mediaSrc.startsWith('http'))) {
-                                item.mediaType = 'pdf';
-                                item.mediaSrc = resolvedUrl;
-                            }
+                        const resolvedUrl = await resolveYandexFolderImage(item.rawImgUrl, item.bz);
+                        if (resolvedUrl) {
+                            item.mediaType = 'image';
+                            item.mediaSrc = resolvedUrl;
                         }
                     } catch (e) {
-                        console.warn('Ошибка разрешения для', item.bz, e);
+                        console.warn('Ошибка разрешения папки для', item.bz, e);
                     }
                     
                     resolved++;
-                    loadingBox.textContent = `Загрузка ссылок Яндекс Диска (${resolved}/${yandexItems.length})...`;
+                    loadingBox.textContent = `Загрузка из папок Яндекс Диска (${resolved}/${folderItems.length})...`;
                 });
                 
                 await Promise.all(promises);
@@ -738,7 +731,7 @@
             // Убираем индикатор
             overlay.remove();
 
-            // Перерисовываем с разрешёнными ссылками
+            // Перерисовываем с обновлёнными ссылками
             applyFilters();
         }
 
@@ -814,14 +807,18 @@
                     const rawImgUrl = getVal(idxImg);
                     const rawPdfUrl = getVal(idxLink);
 
-                    // Сохраняем оригинальные URL для возможного асинхронного разрешения (Яндекс Диск)
-                    let imgUrl = fixUrl(rawImgUrl, 'image');
-                    let pdfUrl = fixUrl(rawPdfUrl, 'pdf');
+                    let imgUrl = fixUrl(rawImgUrl);
+                    let pdfUrl = fixUrl(rawPdfUrl);
 
                     let mediaType = 'none';
                     let mediaSrc = '';
 
-                    if (imgUrl && imgUrl.startsWith('http')) {
+                    // Папки Яндекс Диска обрабатываем отдельно асинхронно
+                    if (rawImgUrl && isYandexFolder(rawImgUrl)) {
+                        // Временно показываем индикатор папки
+                        mediaType = 'folder';
+                        mediaSrc = rawImgUrl;
+                    } else if (imgUrl && imgUrl.startsWith('http')) {
                         mediaType = 'image';
                         mediaSrc = imgUrl;
                     } else if (pdfUrl && pdfUrl.startsWith('http')) {
@@ -872,8 +869,8 @@
                 updateAllFilterOptions();
                 applyFilters();
 
-                // Асинхронно разрешаем ссылки Яндекс Диска после первого рендера
-                resolveAllYandexUrls();
+                // Асинхронно разрешаем папки Яндекс Диска после первого рендера
+                resolveYandexFolders();
 
             } catch (error) {
                 console.error('Ошибка:', error);
@@ -1167,6 +1164,14 @@
                             <div class="pdf-indicator">
                                 <div class="pdf-icon">📄</div>
                                 <div class="pdf-text">Просмотр PDF</div>
+                            </div>
+                        </div>`;
+                } else if (item.mediaType === 'folder') {
+                    mediaHtml = `
+                        <div class="card-media" style="background-color: #f4f4f9;">
+                            <div class="folder-loading-indicator">
+                                <div class="folder-icon">📁</div>
+                                <div class="folder-text">Загрузка из папки...</div>
                             </div>
                         </div>`;
                 }
