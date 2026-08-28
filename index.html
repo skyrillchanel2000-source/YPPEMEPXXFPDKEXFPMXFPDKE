@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Классификация приточек</title>
     <style>
@@ -556,14 +557,51 @@
             { key: 'date', label: 'Дата' }
         ];
 
-        function fixUrl(url) {
+        function extractGoogleDriveId(url) {
+            if (!url) return null;
+            
+            // Формат: /file/d/FILE_ID/view или /file/d/FILE_ID/preview
+            let match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+            if (match) return match[1];
+            
+            // Формат: ?id=FILE_ID или &id=FILE_ID
+            match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (match) return match[1];
+            
+            // Формат: /d/FILE_ID (например в lh3.googleusercontent.com/d/ID)
+            match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+            if (match) return match[1];
+            
+            // Формат: /open?id=FILE_ID
+            match = url.match(/\/open\?id=([a-zA-Z0-9_-]+)/);
+            if (match) return match[1];
+            
+            return null;
+        }
+
+        function fixUrl(url, type) {
             if (!url) return url;
+            
+            // GitHub raw
             if (url.includes('github.com') && url.includes('/blob/')) {
                 return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
             }
-            if (url.includes('drive.google.com') && url.includes('/view')) {
-                return url.replace('/view', '/preview');
+            
+            // Google Drive
+            if (url.includes('drive.google.com') || url.includes('docs.google.com') || url.includes('googleusercontent.com')) {
+                const fileId = extractGoogleDriveId(url);
+                
+                if (fileId) {
+                    if (type === 'image') {
+                        // Для изображений используем lh3.googleusercontent.com - самый надёжный способ
+                        return `https://lh3.googleusercontent.com/d/${fileId}`;
+                    } else {
+                        // Для PDF используем preview для встраивания в iframe
+                        return `https://drive.google.com/file/d/${fileId}/preview`;
+                    }
+                }
             }
+            
             return url;
         }
 
@@ -639,8 +677,9 @@
                     let imgUrl = getVal(idxImg);
                     let pdfUrl = getVal(idxLink);
 
-                    imgUrl = fixUrl(imgUrl);
-                    pdfUrl = fixUrl(pdfUrl);
+                    // Передаём тип контента для корректного преобразования ссылок Google Drive
+                    imgUrl = fixUrl(imgUrl, 'image');
+                    pdfUrl = fixUrl(pdfUrl, 'pdf');
 
                     let mediaType = 'none';
                     let mediaSrc = '';
